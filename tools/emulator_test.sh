@@ -10,6 +10,14 @@ adb shell settings put system screen_off_timeout 1800000
 adb logcat -c
 # The four shapes first, so they always report
 bash tools/shapes.sh
+# Scatto: the card in view, the motor's report, and the three feels played (recorded by the vibrator service)
+adb shell am force-stop $PKG
+adb shell am start -n $PKG/.MainActivity --es open scatto
+sleep 6
+adb exec-out screencap -p > shot-scatto.png
+adb logcat -d -s Scatto:I | tail -3
+adb shell dumpsys vibrator_manager > vibrator.txt 2>&1 || adb shell dumpsys vibrator > vibrator.txt 2>&1
+grep -iE "composition|primitive|$PKG" vibrator.txt | tail -12 || true
 # Fanale chosen before the app opens
 printf '<?xml version="1.0" encoding="utf-8" standalone="yes" ?>\n<map><string name="style">FANALE</string><string name="opening_effect">FANALE</string><string name="closing_effect">FANALE</string></map>\n' > fm.xml
 adb shell am start -n $PKG/.MainActivity; sleep 4; adb shell am force-stop $PKG

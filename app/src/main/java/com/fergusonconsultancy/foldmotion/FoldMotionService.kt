@@ -71,6 +71,13 @@ class FoldMotionService : Service(), SensorEventListener {
 
     private val haptics by lazy { Haptics(this) }
 
+    /** Scatto: how slowly the last close and open were made (0 a flick, 1 slow), from Concentrato's reading. */
+    private var closeSlowness = 0.5f
+    private var openSlowness = 0.5f
+
+    /** Scatto: the close was felt for this fold (by the light's climax, or by the switch when nothing played). */
+    private var closeFelt = false
+
     private val mainHandler = android.os.Handler(android.os.Looper.getMainLooper())
 
     /** If Android has delivered no frames shortly after a run starts, say so in the log. */
@@ -192,6 +199,12 @@ class FoldMotionService : Service(), SensorEventListener {
             val now = SystemClock.uptimeMillis()
 
             if (!inner) {
+                // Scatto: a close with no transition (or one cut short before its climax) is still felt
+                if (!closeFelt && isInteractive()) {
+                    closeFelt = true
+                    haptics.click(if (phase == Phase.PLAYING) closeSlowness else 0.5f)
+                    EventLog.add(this@FoldMotionService, "Scatto: close felt at the switch")
+                }
                 // Closed: learn from this close, and record how the run went
                 if (playStartAt != 0L && (phase == Phase.PLAYING || phase == Phase.HOLDING)) {
                     Timing.record(this@FoldMotionService, now - playStartAt)
@@ -201,10 +214,11 @@ class FoldMotionService : Service(), SensorEventListener {
                 }
             } else if (isInteractive() && phase != Phase.ARMED && !catchUpDue()) {
                 // Opened without a reveal: a low settle as the inner screen arrives
-                haptics.settle()
+                haptics.settle(0.5f)
             }
 
             playStartAt = 0L
+            if (inner) closeFelt = false
             EventLog.add(this@FoldMotionService, if (inner) "One UI switched to the inner screen" else "One UI switched to the cover")
             recordSwitch(inner)
             if (inner) lastInnerSwitchAt = now
@@ -570,7 +584,8 @@ class FoldMotionService : Service(), SensorEventListener {
         finaleMs = plan.finaleMs
         // Concentrato: less time to build means a faster close, so fewer details
         val full = (MotionConfig.EFFECT_MS - MotionConfig.FINALE_MS).toFloat() * scale.coerceAtLeast(0.01f)
-        overlay?.density = density(FoldMath.clamp((finaleAt - 60f) / (full - 60f).coerceAtLeast(1f)))
+        closeSlowness = FoldMath.clamp((finaleAt - 60f) / (full - 60f).coerceAtLeast(1f))
+        overlay?.density = density(closeSlowness)
         finaleFromP = MotionConfig.BUILD_END
         playMs = finaleAt + finaleMs
         EventLog.add(
@@ -583,6 +598,7 @@ class FoldMotionService : Service(), SensorEventListener {
         overlay?.drawCount = 0
         tickDone = false
         clickDone = false
+        closeFelt = false
         Status.mark(this, Status.PLAYED)
         enter(Phase.PLAYING)
     }
@@ -646,6 +662,8 @@ class FoldMotionService : Service(), SensorEventListener {
         val openMs = switchedAt - armedAt
         overlay?.density = if (armedAt <= 0L || openMs < 30L) density(0.6f)
             else density(FoldMath.clamp((openMs - MotionConfig.OPEN_FAST_MS).toFloat() / (MotionConfig.OPEN_SLOW_MS - MotionConfig.OPEN_FAST_MS)))
+        openSlowness = if (armedAt <= 0L || openMs < 30L) 0.5f
+            else FoldMath.clamp((openMs - MotionConfig.OPEN_FAST_MS).toFloat() / (MotionConfig.OPEN_SLOW_MS - MotionConfig.OPEN_FAST_MS))
         EventLog.add(this, "Concentrato: opened in ${openMs}ms, detail ${((overlay?.density ?: 1f) * 100).roundToInt()}%")
         stats.reset()
         overlay?.drawCount = 0
@@ -653,7 +671,7 @@ class FoldMotionService : Service(), SensorEventListener {
         releaseDone = false
         touchDone = false
         MotionConfig.apply(this)
-        if (isInteractive()) haptics.settle()
+        if (isInteractive()) haptics.settle(openSlowness)
         Status.mark(this, Status.PLAYED)
         enter(Phase.REVEALING)
         // Ask for a frame now, in case the switch dropped the pending one
@@ -718,13 +736,16 @@ class FoldMotionService : Service(), SensorEventListener {
                 view.show(p)
                 stats.onFrame(frameTimeNanos)
                 // Haptics timed to the light: tick as the blades start, click on the pulse
-                if (!tickDone && p >= MotionConfig.TICK_AT) { tickDone = true; haptics.tick() }
+                if (!tickDone && p >= MotionConfig.TICK_AT) { tickDone = true; if (!closeFelt) haptics.tick(closeSlowness) }
                 val clickP = when (MotionConfig.CLOSING_EFFECT) {
                     MotionConfig.Effect.FANALE, MotionConfig.Effect.CIRCUITO, MotionConfig.Effect.FANALE_REVERSE, MotionConfig.Effect.LAMP_GLASS -> MotionConfig.FANALE_CONTACT_P
                     MotionConfig.Effect.MEMBRANA -> MotionConfig.MEMBRANA_CONTACT_P
                     else -> MotionConfig.CLICK_AT
                 }
-                if (!clickDone && p >= clickP) { clickDone = true; haptics.click() }
+                if (!clickDone && p >= clickP) {
+                    clickDone = true
+                    if (!closeFelt) { closeFelt = true; haptics.click(closeSlowness) }
+                }
                 if (k >= 1f) {
                     saveRun(100)
                     enter(Phase.HOLDING)
@@ -785,7 +806,7 @@ class FoldMotionService : Service(), SensorEventListener {
                     else -> 2f
                 }
                 // k is real time: the effects draw on unglide(glide(k)), which is k
-                if (!releaseDone && k >= clickAt) { releaseDone = true; haptics.release() }
+                if (!releaseDone && k >= clickAt) { releaseDone = true; haptics.release(openSlowness) }
                 if (!touchDone && k >= touchAt) { touchDone = true; setActiveWindow(true, touchThrough = true); tellTaskbar("revealed") }
                 if (k >= 1f) {
                     val r = stats.result()
