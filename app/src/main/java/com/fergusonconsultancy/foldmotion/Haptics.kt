@@ -196,7 +196,7 @@ class Haptics(private val context: Context) {
             append("Primitives: ").append(if (have.isEmpty()) "none" else have.joinToString(" "))
             if (miss.isNotEmpty()) append("\nMissing: ").append(miss.joinToString(" "))
             append("\nAmplitude control: ").append(if (v.hasAmplitudeControl()) "yes" else "no")
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
                 val f = v.resonantFrequency
                 if (!f.isNaN()) append(", resonance ${f.roundToInt()} Hz")
             }

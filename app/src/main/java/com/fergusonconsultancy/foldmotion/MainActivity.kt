@@ -281,13 +281,15 @@ class MainActivity : Activity(), SensorEventListener {
 
     override fun onResume() {
         super.onResume()
+        // A crash report is showing instead of the settings (Crash.show): nothing here was built
+        if (!::screen.isInitialized) return
         hingeSensor?.let { sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_UI) }
         refresh()
         if (intent?.hasExtra("hold") != true) stage.postDelayed({ stage.play(open = true) }, 450)
     }
 
     override fun onPause() {
-        sensorManager.unregisterListener(this)
+        if (::sensorManager.isInitialized) sensorManager.unregisterListener(this)
         super.onPause()
     }
 
