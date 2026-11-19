@@ -40,7 +40,11 @@ interface Fits { var maxH: Int }
  * choices sit below the fold.
  */
 class Panes(private val a: Activity, val screen: Screen) {
-    val wide: Boolean = a.resources.configuration.let { it.screenWidthDp > it.screenHeightDp || it.smallestScreenWidthDp >= 600 }
+    val wide: Boolean = wideFor(a.resources.configuration)
+
+    companion object {
+        fun wideFor(c: android.content.res.Configuration) = c.screenWidthDp > c.screenHeightDp || c.smallestScreenWidthDp >= 600
+    }
 
     /** Holds the stage and what goes under it; in a wide shape it fits them to the pane's height. */
     val lead = object : LinearLayout(a) {
@@ -67,6 +71,8 @@ class Panes(private val a: Activity, val screen: Screen) {
 
     /** Call once the stage and the action are added, before the rest: returns the Activity's content. */
     fun build(): View {
+        // A fixed id, so the settings keep their place when the activity is rebuilt
+        screen.root.id = R.id.fm_settings
         if (!wide) { screen.add(lead, a.px(26)); return screen.root }
         // The panes keep clear of the bars and the camera on every side, so nothing hides under them
         val row = LinearLayout(a).apply {
