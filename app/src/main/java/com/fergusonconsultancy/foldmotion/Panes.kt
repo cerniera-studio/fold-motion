@@ -89,6 +89,13 @@ class Panes(private val a: Activity, val screen: Screen) {
      * Records where the stage and the main action ended up, for the shapes test: both must be in
      * view at rest, in every shape. Written to files/layout.json once laid out.
      */
+    /** Where the settings are scrolled to (the first scrolling view), for the windows test's turn. */
+    private fun scrollOf(v: View): Int {
+        if (v is android.widget.ScrollView) return v.scrollY
+        if (v is android.view.ViewGroup) for (i in 0 until v.childCount) { val s = scrollOf(v.getChildAt(i)); if (s >= 0) return s }
+        return -1
+    }
+
     fun record(root: View, live: View, action: View) {
         root.viewTreeObserver.addOnGlobalLayoutListener(object : ViewTreeObserver.OnGlobalLayoutListener {
             override fun onGlobalLayout() {
@@ -98,7 +105,7 @@ class Panes(private val a: Activity, val screen: Screen) {
                 // Boxes are in window coordinates; origin is where the view itself starts in them
                 val o = IntArray(2).also { root.getLocationInWindow(it) }
                 val json = "{\"wide\": $wide, \"origin\": [${o[0]}, ${o[1]}], \"view\": [${root.width}, ${root.height}], \"insets\": [${inset?.left ?: 0}, ${inset?.top ?: 0}, ${inset?.right ?: 0}, ${inset?.bottom ?: 0}], " +
-                    "\"live\": ${box(live)}, \"action\": ${box(action)}}"
+                    "\"live\": ${box(live)}, \"action\": ${box(action)}, \"scroll\": ${scrollOf(root)}}"
                 runCatching { java.io.File(a.filesDir, "layout.json").writeText(json) }
             }
         })

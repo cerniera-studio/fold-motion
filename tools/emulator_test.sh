@@ -36,3 +36,7 @@ done
 adb logcat -d > app-log.txt
 if adb logcat -d | grep -A2 "FATAL EXCEPTION" | grep -q "Process: $PKG"; then echo "::error::Fold Motion crashed"; grep -A20 "FATAL EXCEPTION" app-log.txt | head -40; exit 1; fi
 echo "No crash"
+
+# Pop-up windows and a turn (19 Nov 2026). It reboots the emulator to turn pop-up windows on, so
+# it runs last, with its own log and crash check.
+bash tools/windows.sh || exit 1
