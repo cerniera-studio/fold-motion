@@ -134,11 +134,16 @@ class MainActivity : Activity(), SensorEventListener {
         screen.add(Card(this).apply {
             row(Row(this@MainActivity, "Concentrato", "The faster you fold, the emptier the transition: only the movement stays",
                 Toggle(this@MainActivity, MotionConfig.concentrato(this@MainActivity)) { MotionConfig.setConcentrato(this@MainActivity, it) }))
-            row(Row(this@MainActivity, "Haptics", "A click at the climax, a settle on opening",
-                Toggle(this@MainActivity, Haptics.isEnabled(this@MainActivity)) { Haptics.setEnabled(this@MainActivity, it); refresh() }))
+            row(Row(this@MainActivity, "Scatto", "The hinge's voice: a flick snaps shut, a slow close settles like a car door",
+                Toggle(this@MainActivity, Haptics.isEnabled(this@MainActivity)) { Haptics.setEnabled(this@MainActivity, it); showScatto(); refresh() }))
             row(Row(this@MainActivity, "Follow the room's light", "By day you see the lamp; in the dark, only its light. Off: the clock decides",
                 Toggle(this@MainActivity, MotionConfig.followRoom(this@MainActivity)) { MotionConfig.setFollowRoom(this@MainActivity, it); refresh() }))
         }, px(18))
+
+        // Scatto's choices: only while it is on (principle 3)
+        scattoBlock = scattoCard()
+        screen.add(scattoBlock, px(12))
+        showScatto(animate = false)
 
         // ---- Permissions
         screen.section("Permissions")
@@ -178,6 +183,17 @@ class MainActivity : Activity(), SensorEventListener {
             stage.light = d
             stage.post { stage.hold(p) }
         }
+        // For the emulator walk-through: bring Scatto's card into view, log the motor's report and play each feel
+        if (intent?.getStringExtra("open") == "scatto") {
+            Haptics.setEnabled(this, true); showScatto(animate = false)
+            android.util.Log.i("Scatto", Haptics(this).report().replace("\n", " | "))
+            scattoBlock.postDelayed({
+                scattoBlock.requestRectangleOnScreen(android.graphics.Rect(0, 0, scattoBlock.width, scattoBlock.height), true)
+                feel(close = true, slowness = 1f)
+                scattoBlock.postDelayed({ feel(close = true, slowness = 0f) }, 900)
+                scattoBlock.postDelayed({ feel(close = false, slowness = 0.6f) }, 1600)
+            }, 600)
+        }
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
@@ -203,6 +219,51 @@ class MainActivity : Activity(), SensorEventListener {
     }
 
     /** Brightness of the light and speed of the movement, for one direction. The centre tick is as designed. */
+    private lateinit var scattoBlock: View
+    private lateinit var scattoNote: TextView
+
+    /** Scatto (19 Nov 2026): character, strength, close only, and a way to feel each before folding. */
+    private fun scattoCard(): View = Card(this).apply {
+        val pad = px(4)
+        fun label(t: String) = text(t, 14f, Kit.MUTED, 450).apply { setPadding(pad, px(14), 0, px(8)) }
+        val chars = Haptics.Character.entries
+        val note = text(Haptics.character(this@MainActivity).note, 13f, Kit.MUTED).apply { tag = SECONDARY; setPadding(pad, px(8), 0, 0) }
+        addView(label("Character"))
+        addView(Segmented(this@MainActivity, chars.map { it.label }, chars.indexOf(Haptics.character(this@MainActivity))) { i ->
+            Haptics.setCharacter(this@MainActivity, chars[i]); note.text = chars[i].note; feel(close = true, slowness = 1f)
+        }, LinearLayout.LayoutParams(-1, -2))
+        addView(note)
+        val strengths = Haptics.Strength.entries
+        addView(label("Strength"))
+        addView(Segmented(this@MainActivity, strengths.map { it.label }, strengths.indexOf(Haptics.strength(this@MainActivity))) { i ->
+            Haptics.setStrength(this@MainActivity, strengths[i]); feel(close = true, slowness = 0f)
+        }, LinearLayout.LayoutParams(-1, -2))
+        val scopes = Haptics.Scope.entries
+        addView(label("When"))
+        addView(Segmented(this@MainActivity, scopes.map { it.label }, scopes.indexOf(Haptics.scope(this@MainActivity))) { i ->
+            Haptics.setScope(this@MainActivity, scopes[i])
+        }, LinearLayout.LayoutParams(-1, -2))
+        addView(label("Feel it"))
+        val feelRow = LinearLayout(this@MainActivity).apply { orientation = LinearLayout.HORIZONTAL }
+        listOf(Triple("Slow close", true, 1f), Triple("Flick shut", true, 0f), Triple("Open", false, 0.6f)).forEachIndexed { i, (t, close, s) ->
+            feelRow.addView(primary(t, filled = false) { feel(close, s) }, LinearLayout.LayoutParams(0, -2, 1f).apply { if (i > 0) marginStart = px(8) })
+        }
+        addView(feelRow, LinearLayout.LayoutParams(-1, -2))
+        scattoNote = text("", 12f, Kit.MUTED).apply { tag = SECONDARY; typeface = Typeface.MONOSPACE; setPadding(pad, px(14), 0, 0) }
+        addView(scattoNote)
+    }
+
+    private fun feel(close: Boolean, slowness: Float) {
+        Haptics(this).preview(close, slowness) { delay, run -> scattoBlock.postDelayed(run, delay) }
+    }
+
+    private fun showScatto(animate: Boolean = true) {
+        val v = if (Haptics.isEnabled(this)) View.VISIBLE else View.GONE
+        if (scattoBlock.visibility == v) return
+        if (animate) android.transition.TransitionManager.beginDelayedTransition(screen.column)
+        scattoBlock.visibility = v
+    }
+
     private fun tuningCard(open: Boolean): View = Card(this).apply {
         val bKey = if (open) "open_brightness" else "close_brightness"
         val sKey = if (open) "open_speed" else "close_speed"
@@ -263,9 +324,11 @@ class MainActivity : Activity(), SensorEventListener {
             }
         )
 
+        scattoNote.text = Haptics(this).report()
         logText.text = EventLog.read(this).ifBlank { "Nothing logged yet." }
         diagnostics.text = buildString {
             appendLine(if (hingeSensor != null) "Hinge sensor: found" else "Hinge sensor: NOT found on this phone")
+            appendLine("Scatto · " + Haptics(this@MainActivity).report().replace("\n", "\nScatto · "))
             val prefs = getSharedPreferences("fold_motion", MODE_PRIVATE)
             for (dir in listOf("closing", "opening")) {
                 val deg = prefs.getFloat("switch_${dir}_deg", -1f)
