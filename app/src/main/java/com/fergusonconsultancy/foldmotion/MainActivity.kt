@@ -81,6 +81,7 @@ class MainActivity : Activity(), SensorEventListener {
         // For the emulator walk-through: Scatto's character and strength, set before the card is built
         intent?.getStringExtra("character")?.let { n -> Haptics.Character.entries.find { it.name == n }?.let { Haptics.setCharacter(this, it) } }
         intent?.getStringExtra("strength")?.let { n -> Haptics.Strength.entries.find { it.name == n }?.let { Haptics.setStrength(this, it) } }
+        intent?.getStringExtra("sound")?.let { n -> Suono.Level.entries.find { it.name == n }?.let { Suono.setLevel(this, it) } }
         window.statusBarColor = Kit.GROUND
         window.navigationBarColor = Kit.GROUND
         MotionConfig.apply(this)
@@ -206,6 +207,7 @@ class MainActivity : Activity(), SensorEventListener {
             Haptics.setEnabled(this, true)
             showScatto(animate = false)
             android.util.Log.i("Scatto", Haptics(this).report().replace("\n", " | "))
+            runCatching { Haptics(this).exportSounds(java.io.File(filesDir, "suono")) }
             scattoBlock.postDelayed({
                 scattoBlock.requestRectangleOnScreen(android.graphics.Rect(0, 0, scattoBlock.width, scattoBlock.height), true)
                 feel(close = true, slowness = 1f)
@@ -257,6 +259,12 @@ class MainActivity : Activity(), SensorEventListener {
         addView(Segmented(this@MainActivity, strengths.map { it.label }, strengths.indexOf(Haptics.strength(this@MainActivity))) { i ->
             Haptics.setStrength(this@MainActivity, strengths[i]); feel(close = true, slowness = 0f)
         }, LinearLayout.LayoutParams(-1, -2))
+        val levels = Suono.Level.entries
+        addView(label("Sound"))
+        addView(Segmented(this@MainActivity, levels.map { it.label }, levels.indexOf(Suono.level(this@MainActivity))) { i ->
+            Suono.setLevel(this@MainActivity, levels[i]); feel(close = true, slowness = 0f)
+        }, LinearLayout.LayoutParams(-1, -2))
+        addView(text("A quiet layer under the feel: silent on silent or vibrate, softer in the dark", 13f, Kit.MUTED).apply { tag = SECONDARY; setPadding(pad, px(8), 0, 0) })
         val scopes = Haptics.Scope.entries
         addView(label("When"))
         addView(Segmented(this@MainActivity, scopes.map { it.label }, scopes.indexOf(Haptics.scope(this@MainActivity))) { i ->
@@ -345,11 +353,12 @@ class MainActivity : Activity(), SensorEventListener {
             }
         )
 
-        scattoNote.text = Haptics(this).report()
+        scattoNote.text = Haptics(this).report() + "\n" + Suono(this).report()
         logText.text = EventLog.read(this).ifBlank { "Nothing logged yet." }
         diagnostics.text = buildString {
             appendLine(if (hingeSensor != null) "Hinge sensor: found" else "Hinge sensor: NOT found on this phone")
             appendLine("Scatto · " + Haptics(this@MainActivity).report().replace("\n", "\nScatto · "))
+            appendLine("Scatto · " + Suono(this@MainActivity).report())
             val prefs = getSharedPreferences("fold_motion", MODE_PRIVATE)
             for (dir in listOf("closing", "opening")) {
                 val deg = prefs.getFloat("switch_${dir}_deg", -1f)

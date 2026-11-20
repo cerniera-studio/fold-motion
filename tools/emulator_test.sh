@@ -16,7 +16,7 @@ bash tools/shapes.sh
 for pass in "CAVEAU PESANTE" "SCRIGNO DECISO"; do
   set -- $pass
   adb shell am force-stop $PKG
-  adb shell am start -n $PKG/.MainActivity --es open scatto --es character $1 --es strength $2
+  adb shell am start -n $PKG/.MainActivity --es open scatto --es character $1 --es strength $2 --es sound PRESENTE
   sleep 6
   adb exec-out screencap -p > shot-scatto-$1.png
   adb logcat -d -s Scatto:I | tail -3
@@ -24,6 +24,11 @@ for pass in "CAVEAU PESANTE" "SCRIGNO DECISO"; do
   (adb shell dumpsys vibrator_manager 2>&1 || adb shell dumpsys vibrator 2>&1) >> vibrator.txt
 done
 grep -iE "===|composition|primitive|$PKG" vibrator.txt | tail -30 || true
+# Suono: the rendered sounds, brought out for checking (levels, length, spectrum)
+for f in $(adb shell run-as $PKG ls files/suono 2>/dev/null | tr -d '\r'); do
+  adb exec-out run-as $PKG cat files/suono/$f > suono-$f
+done
+ls -la suono-*.wav || true
 # Fanale chosen before the app opens
 printf '<?xml version="1.0" encoding="utf-8" standalone="yes" ?>\n<map><string name="style">FANALE</string><string name="opening_effect">FANALE</string><string name="closing_effect">FANALE</string></map>\n' > fm.xml
 adb shell am start -n $PKG/.MainActivity; sleep 4; adb shell am force-stop $PKG

@@ -114,8 +114,11 @@ class Haptics(private val context: Context) {
     /** Opening, on the reveal's climax: the latch letting go, lighter than the close. */
     fun release(slowness: Float = 0.5f) {
         if (!opening) return
-        compose(
-            when (character) {
+        compose(releaseSteps(slowness))
+    }
+
+    private fun releaseSteps(slowness: Float, ch: Character = character): List<Step> =
+            when (ch) {
                 Character.PORTIERA -> if (slowness < FAST) listOf(Step(CLICK, 0.6f))
                     else listOf(Step(TICK, 0.3f), Step(CLICK, 0.5f, 50))
                 Character.CORONA -> listOf(Step(TICK, 0.6f))
@@ -124,8 +127,6 @@ class Haptics(private val context: Context) {
                 // The lid's spring: a bright snap and a small ring after it
                 Character.SCRIGNO -> listOf(Step(CLICK, 0.7f), Step(TICK, 0.35f, 60))
             }
-        )
-    }
 
     // endregion
 
@@ -140,7 +141,7 @@ class Haptics(private val context: Context) {
         }
     }
 
-    private fun closeSteps(s: Float): List<Step> = when (character) {
+    private fun closeSteps(s: Float, ch: Character = character): List<Step> = when (ch) {
         Character.PORTIERA -> when {
             s < FAST -> listOf(Step(CLICK, 1f), Step(THUD, 0.45f, 10))
             else -> listOf(Step(THUD, 0.55f + 0.4f * s), Step(LOW, 0.25f + 0.3f * s, (40 + 50 * s).roundToInt()))
@@ -174,6 +175,46 @@ class Haptics(private val context: Context) {
             c.compose()
         } else waveform(weighted)
         play(effect)
+        if (enabled) suono.play(character, hits(weighted))
+    }
+
+    private val suono = Suono(context)
+
+    /** When each step starts, in ms: its delay after the previous one ends (the composition's rule). */
+    private fun hits(steps: List<Step>): List<Suono.Hit> {
+        var t = 0
+        return steps.map { st ->
+            t += st.delay
+            val h = Suono.Hit(st.kind, st.scale.coerceIn(0f, 1f), t)
+            t += duration(st.kind)
+            h
+        }
+    }
+
+    /** How long this phone's motor takes over each primitive, so the sound lands with it. */
+    private val durations: Map<Int, Int> by lazy {
+        val v = vibrator
+        if (v == null || !primitives) return@lazy emptyMap()
+        val kinds = listOf(CLICK, TICK, LOW, THUD, QUICK_RISE, SLOW_RISE, QUICK_FALL)
+        runCatching {
+            val d = v.getPrimitiveDurations(*kinds.map { resolve(it) }.toIntArray())
+            kinds.indices.associate { kinds[it] to d[it] }.filterValues { it > 0 }
+        }.getOrDefault(emptyMap())
+    }
+
+    private fun duration(kind: Int): Int = durations[kind] ?: when (kind) {
+        THUD -> 26; SLOW_RISE -> 60; QUICK_RISE, QUICK_FALL -> 30; LOW -> 18; CLICK -> 12; else -> 8
+    }
+
+    /** For the emulator walk: each character's flick, slow close and open, as WAVs at Presente by day. */
+    fun exportSounds(dir: java.io.File) {
+        dir.mkdirs()
+        Character.entries.forEach { ch ->
+            listOf("flick" to closeSteps(0f, ch), "slow" to closeSteps(1f, ch), "open" to releaseSteps(0.6f, ch)).forEach { (name, steps) ->
+                val pcm = Suono.render(ch, hits(weigh(steps, gain)), Suono.Level.PRESENTE.gain)
+                java.io.File(dir, "${ch.name.lowercase()}-$name.wav").writeBytes(Suono.wav(pcm))
+            }
+        }
     }
 
     /**
@@ -297,13 +338,13 @@ class Haptics(private val context: Context) {
         /** Below this slowness a fold counts as a flick. */
         const val FAST = 0.35f
 
-        private const val CLICK = 1
-        private const val TICK = 2
-        private const val LOW = 3
-        private const val THUD = 4
-        private const val QUICK_RISE = 5
-        private const val SLOW_RISE = 6
-        private const val QUICK_FALL = 7
+        internal const val CLICK = 1
+        internal const val TICK = 2
+        internal const val LOW = 3
+        internal const val THUD = 4
+        internal const val QUICK_RISE = 5
+        internal const val SLOW_RISE = 6
+        internal const val QUICK_FALL = 7
 
         /** How far behind its hit the spilled-over force follows, in ms. */
         private const val ECHO = 8
