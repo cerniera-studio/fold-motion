@@ -32,8 +32,10 @@ import kotlin.math.tanh
  * - Softer as the room darkens (the lamps' own reading), down to about half in the dark.
  * - Plays as a system sonification: no audio focus, so music is neither paused nor ducked.
  *
- * Phone speakers can't make real bass, so each low "body" is driven through a soft saturation:
- * its harmonics carry it, and the ear supplies the missing low note.
+ * Phone speakers can't make real bass (little comes out below 300 Hz or so), so each low "body"
+ * is built mostly from its 2nd to 10th harmonics: they come through, and the ear supplies the
+ * missing low note. The first build used a saturated sine and measured 92-95% of the door's and
+ * vault's energy below 200 Hz, inaudible on a phone; this is why.
  */
 class Suono(private val context: Context) {
 
@@ -166,17 +168,31 @@ class Suono(private val context: Context) {
             return out
         }
 
-        /** A low, pitch-dropping tone, saturated so its harmonics carry it on a small speaker. */
+        /**
+         * One sample of a low note a phone can play: a quiet fundamental and harmonics 2 to 10,
+         * falling off more slowly the larger [drive] (a heavier, rounder object), normalised to 1.
+         */
+        private fun tone(ph: Double, drive: Float): Float {
+            var sum = 0.3 * sin(ph)
+            var norm = 0.3
+            for (k in 2..10) {
+                val w = exp(-(k - 2) / drive.toDouble())
+                sum += w * sin(k * ph)
+                norm += w
+            }
+            return (sum / norm * 2.2).toFloat()
+        }
+
+        /** A low, pitch-dropping tone, built so a small speaker can carry it. */
         private fun body(out: FloatArray, at: Int, v: Voice, a: Float, hz: Float, tau: Float) {
             val n = min(out.size - at, (tau * 6 * RATE).toInt())
             var ph = 0.0
-            val norm = tanh(v.drive)
             for (i in 0 until n) {
                 val t = i / RATE.toFloat()
                 val f = hz * (1f + 0.6f * exp(-t / 0.015f))
                 ph += 2 * PI * f / RATE
                 val env = min(1f, t / 0.001f) * exp(-t / tau)
-                out[at + i] += a * 0.8f * tanh(v.drive * sin(ph).toFloat()) / norm * env
+                out[at + i] += a * 0.8f * tone(ph, v.drive) * env
             }
         }
 
@@ -222,12 +238,11 @@ class Suono(private val context: Context) {
         private fun rise(out: FloatArray, at: Int, v: Voice, a: Float, len: Float) {
             val n = min(out.size - at, (len * 1.2f * RATE).toInt())
             var ph = 0.0
-            val norm = tanh(v.drive)
             for (i in 0 until n) {
                 val t = i / RATE.toFloat()
                 ph += 2 * PI * v.bodyHz / RATE
                 val env = if (t < len) (t / len) * (t / len) else exp(-(t - len) / 0.02f)
-                out[at + i] += a * 0.6f * tanh(v.drive * sin(ph).toFloat()) / norm * env
+                out[at + i] += a * 0.6f * tone(ph, v.drive) * env
             }
         }
 
@@ -235,12 +250,11 @@ class Suono(private val context: Context) {
         private fun fall(out: FloatArray, at: Int, v: Voice, a: Float, len: Float) {
             val n = min(out.size - at, (len * 1.5f * RATE).toInt())
             var ph = 0.0
-            val norm = tanh(v.drive)
             for (i in 0 until n) {
                 val t = i / RATE.toFloat()
                 val f = v.bodyHz * (2f - min(1f, t / len))
                 ph += 2 * PI * f / RATE
-                out[at + i] += a * 0.7f * tanh(v.drive * sin(ph).toFloat()) / norm * exp(-t / (len * 0.5f))
+                out[at + i] += a * 0.7f * tone(ph, v.drive) * exp(-t / (len * 0.5f))
             }
         }
 
