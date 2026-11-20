@@ -200,7 +200,10 @@ class MainActivity : Activity(), SensorEventListener {
         }
         // For the emulator walk-through: bring Scatto's card into view, log the motor's report and play each feel
         if (intent?.getStringExtra("open") == "scatto") {
-            Haptics.setEnabled(this, true); showScatto(animate = false)
+            Haptics.setEnabled(this, true)
+            intent.getStringExtra("character")?.let { n -> Haptics.Character.entries.find { it.name == n }?.let { Haptics.setCharacter(this, it) } }
+            intent.getStringExtra("strength")?.let { n -> Haptics.Strength.entries.find { it.name == n }?.let { Haptics.setStrength(this, it) } }
+            showScatto(animate = false)
             android.util.Log.i("Scatto", Haptics(this).report().replace("\n", " | "))
             scattoBlock.postDelayed({
                 scattoBlock.requestRectangleOnScreen(android.graphics.Rect(0, 0, scattoBlock.width, scattoBlock.height), true)
