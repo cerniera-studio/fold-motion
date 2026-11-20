@@ -78,6 +78,9 @@ class MainActivity : Activity(), SensorEventListener {
         // Fold Motion keeps Visconti (night) in either light: the stage's lamps are judged against it
         Kit.dark = true
         if (Crash.show(this, "Fold Motion")) return
+        // For the emulator walk-through: Scatto's character and strength, set before the card is built
+        intent?.getStringExtra("character")?.let { n -> Haptics.Character.entries.find { it.name == n }?.let { Haptics.setCharacter(this, it) } }
+        intent?.getStringExtra("strength")?.let { n -> Haptics.Strength.entries.find { it.name == n }?.let { Haptics.setStrength(this, it) } }
         window.statusBarColor = Kit.GROUND
         window.navigationBarColor = Kit.GROUND
         MotionConfig.apply(this)
@@ -201,8 +204,6 @@ class MainActivity : Activity(), SensorEventListener {
         // For the emulator walk-through: bring Scatto's card into view, log the motor's report and play each feel
         if (intent?.getStringExtra("open") == "scatto") {
             Haptics.setEnabled(this, true)
-            intent.getStringExtra("character")?.let { n -> Haptics.Character.entries.find { it.name == n }?.let { Haptics.setCharacter(this, it) } }
-            intent.getStringExtra("strength")?.let { n -> Haptics.Strength.entries.find { it.name == n }?.let { Haptics.setStrength(this, it) } }
             showScatto(animate = false)
             android.util.Log.i("Scatto", Haptics(this).report().replace("\n", " | "))
             scattoBlock.postDelayed({

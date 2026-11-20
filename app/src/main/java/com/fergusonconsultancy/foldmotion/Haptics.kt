@@ -189,7 +189,7 @@ class Haptics(private val context: Context) {
             out += Step(st.kind, s.coerceAtMost(1f), (st.delay - taken).coerceAtLeast(0))
             taken = 0
             val over = s - 1f
-            if (over > 0.05f) {
+            if (over > 0.15f) {  // a smaller spill is too faint to feel
                 out += Step(body(st.kind), over.coerceAtMost(1f), ECHO)
                 taken = ECHO + 10
             }
