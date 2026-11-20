@@ -103,8 +103,14 @@ class Panes(private val a: Activity, val screen: Screen) {
     }
 
     fun record(root: View, live: View, action: View) {
+        root.viewTreeObserver.addOnScrollChangedListener { write(root, live, action) }
         root.viewTreeObserver.addOnGlobalLayoutListener(object : ViewTreeObserver.OnGlobalLayoutListener {
-            override fun onGlobalLayout() {
+            override fun onGlobalLayout() { write(root, live, action) }
+        })
+    }
+
+    /** The record, on every layout and every scroll (so the windows test knows the page moved). */
+    private fun write(root: View, live: View, action: View) {
                 if (live.height <= 0 || action.height <= 0 || root.height <= 0) return
                 fun box(v: View): String { val p = IntArray(2); v.getLocationInWindow(p); return "[${p[0]}, ${p[1]}, ${p[0] + v.width}, ${p[1] + v.height}]" }
                 val inset = root.rootWindowInsets?.getInsets(WindowInsets.Type.systemBars())
@@ -113,7 +119,5 @@ class Panes(private val a: Activity, val screen: Screen) {
                 val json = "{\"wide\": $wide, \"origin\": [${o[0]}, ${o[1]}], \"view\": [${root.width}, ${root.height}], \"insets\": [${inset?.left ?: 0}, ${inset?.top ?: 0}, ${inset?.right ?: 0}, ${inset?.bottom ?: 0}], " +
                     "\"live\": ${box(live)}, \"action\": ${box(action)}, \"scroll\": ${scrollOf(root)}}"
                 runCatching { java.io.File(a.filesDir, "layout.json").writeText(json) }
-            }
-        })
     }
 }

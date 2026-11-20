@@ -26,6 +26,11 @@ adb shell input keyevent 82
 adb shell settings put system accelerometer_rotation 0
 adb shell settings put system user_rotation 0
 for a in window_animation_scale transition_animation_scale animator_duration_scale; do adb shell settings put global $a 0; done
+# No "isn't responding" dialogs, and three-button navigation: the launcher's swipe-up gesture
+# monitor can stall after the reboot and hold up input to every app (seen in other apps' runs)
+adb shell settings put global hide_error_dialogs 1
+adb shell cmd overlay enable com.android.internal.systemui.navbar.threebutton
+adb shell am force-stop com.google.android.apps.nexuslauncher; sleep 5
 adb logcat -c
 
 # The main screen, upright
@@ -76,12 +81,24 @@ adb shell am force-stop $PKG; sleep 2
 adb shell run-as $PKG rm -f files/layout.json
 adb shell am start -W --windowingMode 1 -n $PKG/.MainActivity --es hold "0.5,0.45" >/dev/null; sleep 5
 layout >/dev/null
-# Scroll the choices (the right pane on the main screen) part way down
-adb shell input swipe 1150 1300 1150 700 600; sleep 2; shot scrolled
+# Scroll the choices (the right pane on the main screen) part way down; the record follows the
+# scroll, so make sure it really moved (by keyboard if touches don't land)
+before=0
+for try in 1 2 3; do
+  adb shell input swipe 1150 1300 1150 700 600; sleep 2
+  before=$(layout | python3 -c "import sys,json;print(json.load(sys.stdin)['scroll'])" 2>/dev/null); [ "${before:-0}" -gt 0 ] && break
+done
+if [ "${before:-0}" -le 0 ]; then
+  for k in $(seq 1 14); do adb shell input keyevent KEYCODE_DPAD_DOWN; done; sleep 2
+  before=$(layout | python3 -c "import sys,json;print(json.load(sys.stdin)['scroll'])" 2>/dev/null)
+fi
+shot scrolled
 adb shell run-as $PKG rm -f files/layout.json
 adb shell settings put system user_rotation 1; sleep 5; shot scrolled-turned
 s=$(layout | python3 -c "import sys,json;print(json.load(sys.stdin)['scroll'])" 2>/dev/null)
-if [ -z "$s" ] || [ "$s" = -1 ]; then warn "Settings across a turn: no scroll position recorded; skipped"
+echo "scroll: $before -> $s" | tee -a $out
+if [ "${before:-0}" -le 0 ]; then warn "Settings across a turn: the page never scrolled; skipped"
+elif [ -z "$s" ] || [ "$s" = -1 ]; then warn "Settings across a turn: no scroll position recorded; skipped"
 elif [ "$s" -gt 0 ]; then note "Settings across a turn: kept their place (scrolled $s px)"
 else fail "Settings across a turn: back at the top after the turn"; fi
 adb shell settings put system user_rotation 0; sleep 3
