@@ -59,6 +59,20 @@ class MainActivity : Activity(), SensorEventListener {
     private lateinit var diagnostics: TextView
     private lateinit var logText: TextView
 
+    /** One column or two panes, as built. */
+    private var builtWide: Boolean? = null
+
+    /**
+     * Resizing a pop-up or split-screen window doesn't rebuild the activity, so it would keep the
+     * layout it was built with (seen in the windows test, 19 Nov 2026). Rebuild when the window
+     * crosses between one column and two panes; the settings keep their place (fm_settings).
+     */
+    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+        super.onConfigurationChanged(newConfig)
+        val was = builtWide ?: return
+        if (Panes.wideFor(newConfig) != was) recreate()
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         // Fold Motion keeps Visconti (night) in either light: the stage's lamps are judged against it
@@ -72,6 +86,7 @@ class MainActivity : Activity(), SensorEventListener {
 
         screen = Screen(this, "Fold Motion", "Galaxy Z Fold 8 Ultra")
         val panes = Panes(this, screen)
+        builtWide = panes.wide
 
         // ---- The stage: the transition, live, with its light and the one main action beneath,
         // in view at rest in every shape (a pane of its own when the screen is wide)
