@@ -235,6 +235,15 @@ object MotionConfig {
      */
     const val LAMP_FINALE_MS = 130L
 
+    /** For Scatto's preview: ms from an opening's climax to touch returning, at the designed speed. */
+    fun climaxToTouchMs(e: Effect): Int = (REVEAL_MS * when (e) {
+        Effect.FANALE -> FANALE_TOUCH_T - FANALE_LIGHTS_T
+        Effect.MEMBRANA -> 0f
+        Effect.FANALE_REVERSE -> FANALE_REVERSE_TOUCH_T - FANALE_REVERSE_CLICK_T
+        Effect.CIRCUITO -> CIRCUITO_TOUCH_T - CIRCUITO_MEET_T
+        else -> 0.3f
+    }).toInt()
+
     fun finaleMsFor(e: Effect) = when (e) {
         Effect.FANALE, Effect.FANALE_REVERSE, Effect.CIRCUITO -> LAMP_FINALE_MS
         else -> FINALE_MS

@@ -75,6 +75,10 @@ class FoldMotionService : Service(), SensorEventListener {
     private var closeSlowness = 0.5f
     private var openSlowness = 0.5f
 
+    /** Scatto: how many ms before the climax each sequence must start, so its climax lands on the light's (21 Nov). */
+    private var closeLead = 0
+    private var releaseLead = 0
+
     /** Scatto: the close was felt for this fold (by the light's climax, or by the switch when nothing played). */
     private var closeFelt = false
 
@@ -585,6 +589,7 @@ class FoldMotionService : Service(), SensorEventListener {
         // Concentrato: less time to build means a faster close, so fewer details
         val full = (MotionConfig.EFFECT_MS - MotionConfig.FINALE_MS).toFloat() * scale.coerceAtLeast(0.01f)
         closeSlowness = FoldMath.clamp((finaleAt - 60f) / (full - 60f).coerceAtLeast(1f))
+        closeLead = haptics.closeLead(closeSlowness)
         overlay?.density = density(closeSlowness)
         finaleFromP = MotionConfig.BUILD_END
         playMs = finaleAt + finaleMs
@@ -672,6 +677,7 @@ class FoldMotionService : Service(), SensorEventListener {
         touchDone = false
         MotionConfig.apply(this)
         if (isInteractive()) haptics.settle(openSlowness)
+        releaseLead = haptics.releaseLead(openSlowness)
         Status.mark(this, Status.PLAYED)
         enter(Phase.REVEALING)
         // Ask for a frame now, in case the switch dropped the pending one
@@ -742,9 +748,11 @@ class FoldMotionService : Service(), SensorEventListener {
                     MotionConfig.Effect.MEMBRANA -> MotionConfig.MEMBRANA_CONTACT_P
                     else -> MotionConfig.CLICK_AT
                 }
-                if (!clickDone && p >= clickP) {
+                // Started closeLead ms early, so a sequence's climax (not its first hit) lands on contact;
+                // what follows the climax must fit in the finale, the light's last moment
+                if (!clickDone && planP(t + closeLead) >= clickP) {
                     clickDone = true
-                    if (!closeFelt) { closeFelt = true; haptics.click(closeSlowness) }
+                    if (!closeFelt) { closeFelt = true; haptics.click(closeSlowness, finaleMs.roundToInt()) }
                 }
                 if (k >= 1f) {
                     saveRun(100)
@@ -806,7 +814,12 @@ class FoldMotionService : Service(), SensorEventListener {
                     else -> 2f
                 }
                 // k is real time: the effects draw on unglide(glide(k)), which is k
-                if (!releaseDone && k >= clickAt) { releaseDone = true; haptics.release(openSlowness) }
+                // Started releaseLead ms early so the climax lands on the light's; nothing may follow it
+                // once touch is back (Membrana: touch returns on the climax, so nothing follows at all)
+                if (!releaseDone && (elapsed() + releaseLead) / revealMs >= clickAt) {
+                    releaseDone = true
+                    haptics.release(openSlowness, ((touchAt - clickAt) * revealMs).roundToInt().coerceAtLeast(0))
+                }
                 if (!touchDone && k >= touchAt) { touchDone = true; setActiveWindow(true, touchThrough = true); tellTaskbar("revealed") }
                 if (k >= 1f) {
                     val r = stats.result()
