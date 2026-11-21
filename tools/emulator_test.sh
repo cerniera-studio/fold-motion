@@ -13,10 +13,11 @@ bash tools/shapes.sh
 # Scatto: the card in view, the motor's report, and the three feels played (recorded by the vibrator service)
 # (20 Nov) Played twice: Caveau at Pesante (the heaviest, with the spilled-over hits), then Scrigno at Deciso
 : > vibrator.txt
-for pass in "CAVEAU PESANTE" "SCRIGNO DECISO"; do
+# (21 Nov) First Matched to the light (Fanale by default: Portiera), then two characters with it off
+for pass in "MATCHED PESANTE true" "CAVEAU PESANTE false" "SCRIGNO DECISO false"; do
   set -- $pass
   adb shell am force-stop $PKG
-  adb shell am start -n $PKG/.MainActivity --es open scatto --es character $1 --es strength $2 --es sound PRESENTE
+  adb shell am start -n $PKG/.MainActivity --es open scatto --es character $1 --es strength $2 --es sound PRESENTE --es matched $3
   sleep 6
   adb exec-out screencap -p > shot-scatto-$1.png
   adb logcat -d -s Scatto:I | tail -3

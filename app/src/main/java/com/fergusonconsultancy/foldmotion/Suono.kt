@@ -48,7 +48,7 @@ class Suono(private val context: Context) {
     /** One hit as the motor plays it: kind (Haptics' codes), strength 0..1, start in ms. */
     data class Hit(val kind: Int, val scale: Float, val at: Int)
 
-    fun play(character: Haptics.Character, hits: List<Hit>) {
+    fun play(character: Haptics.Voice, hits: List<Hit>) {
         val lvl = level(context)
         if (lvl == Level.OFF || hits.isEmpty() || !allowed()) return
         val volume = lvl.gain * (1f - 0.5f * Ambient.darkness(context))
@@ -118,19 +118,21 @@ class Suono(private val context: Context) {
             c.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit().putString(KEY, v.name).apply()
         }
 
-        private fun voice(c: Haptics.Character) = when (c) {
+        private fun voice(c: Haptics.Voice) = when (c) {
             // A car door: a padded, low thump; the latch only a hint
-            Haptics.Character.PORTIERA -> Voice(72f, 0.070f, 3.5f, floatArrayOf(1650f), 0.006f, 0.12f, 0.30f, 0.2f)
+            Haptics.Voice.PORTIERA -> Voice(72f, 0.070f, 3.5f, floatArrayOf(1650f), 0.006f, 0.12f, 0.30f, 0.2f)
             // A watch crown: almost no body, a small bright metal detent
-            Haptics.Character.CORONA -> Voice(190f, 0.010f, 1.5f, floatArrayOf(3400f, 5150f), 0.012f, 0.45f, 0.15f, 0.8f)
+            Haptics.Voice.CORONA -> Voice(190f, 0.010f, 1.5f, floatArrayOf(3400f, 5150f), 0.012f, 0.45f, 0.15f, 0.8f)
             // A vault door: the deepest body, and steel in the bolts
-            Haptics.Character.CAVEAU -> Voice(50f, 0.130f, 4.5f, floatArrayOf(820f, 1310f), 0.035f, 0.28f, 0.22f, 0.3f)
+            Haptics.Voice.CAVEAU -> Voice(50f, 0.130f, 4.5f, floatArrayOf(820f, 1310f), 0.035f, 0.28f, 0.22f, 0.3f)
             // A jewel case: a soft velvet pop and a bright spring that rings
-            Haptics.Character.SCRIGNO -> Voice(140f, 0.022f, 2.0f, floatArrayOf(4200f, 6350f), 0.060f, 0.32f, 0.10f, 0.6f)
+            Haptics.Voice.SCRIGNO -> Voice(140f, 0.022f, 2.0f, floatArrayOf(4200f, 6350f), 0.060f, 0.32f, 0.10f, 0.6f)
+            // A membrane: an elastic body, a short dry snap, no ring
+            Haptics.Voice.MEMBRANA -> Voice(110f, 0.028f, 2.5f, floatArrayOf(2600f), 0.004f, 0.15f, 0.25f, 0.4f)
         }
 
         /** The sound for these hits, as mono float PCM at [RATE]. Pure, so it can be exported and checked. */
-        fun render(character: Haptics.Character, hits: List<Hit>, volume: Float): FloatArray {
+        fun render(character: Haptics.Voice, hits: List<Hit>, volume: Float): FloatArray {
             val v = voice(character)
             val end = hits.maxOf { it.at } + 450
             val out = FloatArray(end * RATE / 1000)
