@@ -1,0 +1,5 @@
+MainActivity task: 28 freeform
+::notice::MainActivity in a wide pop-up window (two panes, view 1503x1494): the live stage and its action in view
+::notice::MainActivity in a narrow pop-up window (one column, view 740x1494): the live stage and its action in view
+scroll: 704 -> 704
+::notice::Settings across a turn: kept their place (scrolled 704 px)
