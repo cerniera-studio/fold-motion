@@ -158,11 +158,11 @@ object MotionConfig {
         RIM = rim(context)
     }
 
-    /** Closing effect; set from the chosen style. Arch Aperture since 16 Oct 2026 (night). */
+    /** Closing effect; set from the chosen closing in the app. */
     var CLOSING_EFFECT = Effect.FANALE
         private set
 
-    /** Opening effect; set from the chosen style. Lit Glass since 22 Oct 2026. */
+    /** Opening effect; set from the chosen opening in the app. */
     var OPENING_EFFECT = Effect.FANALE
         private set
 
