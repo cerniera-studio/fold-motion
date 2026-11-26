@@ -94,7 +94,7 @@ object MotionConfig {
     private fun migrate(name: String?): String? = if (name == "MEMBRANA") "CATENARIA" else name
 
     fun style(context: android.content.Context): Style = runCatching {
-        Style.valueOf(migrate(context.getSharedPreferences(PREFS, android.content.Context.MODE_PRIVATE).getString(STYLE_KEY, null)!!))
+        Style.valueOf(migrate(context.getSharedPreferences(PREFS, android.content.Context.MODE_PRIVATE).getString(STYLE_KEY, null))!!)
     }.getOrDefault(Style.FANALE)
 
     /** A preset: sets the opening and the closing together. */
