@@ -4,9 +4,9 @@ A fold transition for the Galaxy Z Fold8 Ultra. Three styles, chosen in the app:
 
 - **Visconti**: a lacquer arch closes in on the crease (closing); dark glass with Visconti light inside it opens into a lit bezel that seats and slides away (opening).
 - **Giulietta**: the same glass opening, woken by the Giulietta's rear lamps. The right ring sweeps round where your fingers left the cover, its beaded bar runs in to the crease, the light crosses, and the left lamp completes as the halves' hold gives.
-- **Fanale**: Alfa Romeo as the only influence. Opening, both lamps light in sequence, bloom, and the dark halves part carrying them off the edges. Closing locks the car: the halves slide in lit, meet with a soft close, the lamps go out like an indicator, and the last point of light dips into the hinge.
+- **Fanale**: Alfa Romeo as the only influence, with a nod to the Fold 8: the bars leave their rings at opposite points, so the light traces the waist of an 8. Opening, both lamps light in sequence, bloom, and the dark halves part carrying them off the edges. Closing locks the car: the halves slide in lit, meet with a soft close, the lamps go out like an indicator, and the last point of light dips into the hinge.
 
-- **Membrana**: the Bellezza Necessaria transition. One membrane parts on two hanging curves from the hinge, thins where it is stretched, and snaps taut; closing, it is drawn into a lens that seals into a last point of light. Rim light in champagne, rosso or Visconti.
+- **Catenaria** (replaced Membrana, 26 Nov 2026): Gaudí's hanging chain. A chain of light hangs down the crease, swings open into a catenary between the parting halves and leaves taut through the top; closing lets it fall back to the crease. Chain light in champagne, rosso or Visconti.
 
 **Concentrato** (on by default): every style reads how fast you folded and keeps less detail the faster you go; the movement itself always stays. The settings screen plays each transition live and carries the design charter and notes.
 
@@ -17,7 +17,7 @@ The effect learns your closing speed and fits itself inside it, measures its own
 Colours, type, the settings controls, the doctrine and crash reports come from Cerniera's Kit
 (cerniera-studio/kit), a git submodule at `kit/` pinned to a commit. Clone with
 `git clone --recurse-submodules`; to take the Kit's latest, run `git submodule update --remote kit`
-and commit. The transitions themselves (the overlay, the lamps, the membrane) are Fold Motion's own.
+and commit. The transitions themselves (the overlay, the lamps, the chain) are Fold Motion's own.
 
 ## Get the APK (no Android Studio needed)
 
