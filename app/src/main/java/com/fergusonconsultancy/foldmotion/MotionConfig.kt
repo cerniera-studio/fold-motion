@@ -29,7 +29,7 @@ package com.fergusonconsultancy.foldmotion
  * no official colour value was available.
  */
 object MotionConfig {
-    enum class Effect { ONE_PLANE, CREASE_SPLIT, RULED_SURFACE, NAVE_OF_LIGHT, LACQUER_PANEL, ARCH_APERTURE, HINGE_SHADE, SIGNATURE, FRAME_OF_LIGHT, LIT_GLASS, LAMP_GLASS, FANALE, MEMBRANA, FANALE_REVERSE, CIRCUITO }
+    enum class Effect { ONE_PLANE, CREASE_SPLIT, RULED_SURFACE, NAVE_OF_LIGHT, LACQUER_PANEL, ARCH_APERTURE, HINGE_SHADE, SIGNATURE, FRAME_OF_LIGHT, LIT_GLASS, LAMP_GLASS, FANALE, CATENARIA, FANALE_REVERSE, CIRCUITO }
 
     /**
      * The pairings Mechack chooses between in the app (23 Oct 2026). Each names its closing and
@@ -37,18 +37,18 @@ object MotionConfig {
      */
     /**
      * The transitions (30 Oct 2026): four, in alphabetical order, and the same four names in
-     * every list. Each is one path of light (or one membrane); its closing retraces the path its
+     * every list. Each is one path of light (or one chain of it); its closing retraces the path its
      * opening takes, in the opposite direction, so opening and closing are one gesture, there
      * and back. Choosing one here sets both; they can still be mixed below.
      */
     enum class Style(val label: String, val detail: String, val closing: Effect, val opening: Effect) {
+        CATENARIA("Catenaria", "A chain of light hangs down the crease and swings open between the parting halves, pulled taut as it leaves. Closing lets it fall back to the crease.", Effect.CATENARIA, Effect.CATENARIA),
         CIRCUITO("Circuito", "Both lamps light at their outer edges and the light runs round the rings and in to the crease. Closing runs it back out.", Effect.CIRCUITO, Effect.CIRCUITO),
         FANALE("Fanale", "The lamps light one after the other, right then left, like unlocking the car. Closing runs the same path back, left then right.", Effect.FANALE, Effect.FANALE),
         FANALE_REVERSE("Fanale reversed", "Light rises from the hinge, out along the bars and round the rings. Closing runs it back round the rings and in to the crease.", Effect.FANALE_REVERSE, Effect.FANALE_REVERSE),
-        MEMBRANA("Membrana", "One membrane parts from the crease on two curves and snaps taut. Closing draws it back in, the same curves in reverse.", Effect.MEMBRANA, Effect.MEMBRANA),
     }
 
-    /** The colour of Membrana's rim light: glow and core. */
+    /** The colour of Catenaria's chain of light: glow and core. */
     enum class Rim(val label: String, val glow: Int, val core: Int) {
         CHAMPAGNE("Champagne", android.graphics.Color.rgb(236, 196, 120), android.graphics.Color.rgb(255, 244, 222)),
         ROSSO("Rosso", android.graphics.Color.rgb(246, 20, 34), android.graphics.Color.rgb(255, 118, 98)),
@@ -90,8 +90,11 @@ object MotionConfig {
     private const val PREFS = "fold_motion"
     private const val STYLE_KEY = "style"
 
+    /** Membrana was replaced by Catenaria (26 Nov 2026): a saved Membrana choice becomes Catenaria. */
+    private fun migrate(name: String?): String? = if (name == "MEMBRANA") "CATENARIA" else name
+
     fun style(context: android.content.Context): Style = runCatching {
-        Style.valueOf(context.getSharedPreferences(PREFS, android.content.Context.MODE_PRIVATE).getString(STYLE_KEY, null)!!)
+        Style.valueOf(migrate(context.getSharedPreferences(PREFS, android.content.Context.MODE_PRIVATE).getString(STYLE_KEY, null))!!)
     }.getOrDefault(Style.FANALE)
 
     /** A preset: sets the opening and the closing together. */
@@ -104,18 +107,18 @@ object MotionConfig {
 
     /** The openings offered in the app. */
     enum class Opening(val label: String, val detail: String, val effect: Effect) {
+        CATENARIA("Catenaria", "A chain of light hangs straight down the crease; its ends ride out with the parting halves and it swings open into a hanging curve, your screen beneath it, until it is pulled taut and leaves through the top", Effect.CATENARIA),
         CIRCUITO("Circuito", "From both lamps' outer edges, round each ring both ways, in along the bars; the two lights meet on the crease, bloom, and the halves part", Effect.CIRCUITO),
         FANALE("Fanale", "The right ring sweeps round and its bar runs in to the crease; the light crosses, runs out along the left bar and closes the left ring; the lamps bloom and the halves part", Effect.FANALE),
         FANALE_REVERSE("Fanale reversed", "A point of light rises from the hinge, splits, runs out along both bars and sweeps the full circle of each ring; the lamps bloom and the halves part", Effect.FANALE_REVERSE),
-        MEMBRANA("Membrana", "A seam of light gives; the membrane parts on two curves, its middle leading, and snaps taut", Effect.MEMBRANA),
     }
 
     /** The closings offered in the app. */
     enum class Closing(val label: String, val detail: String, val effect: Effect) {
+        CATENARIA("Catenaria", "The opening run back: the chain drops in from the top, taut, and sags deeper as the halves close in on it, until it hangs straight down the crease as they meet", Effect.CATENARIA),
         CIRCUITO("Circuito", "The opening run back: a point in the closing gap splits, runs out along both bars and round each ring both ways, meeting at the outer edges; the halves seal on a strip of light", Effect.CIRCUITO),
         FANALE("Fanale", "The opening run back: round the left ring, down its bar, across the crease, out along the right bar and round the right ring; the halves seal on a strip of light", Effect.FANALE),
         FANALE_REVERSE("Fanale reversed", "The opening run back: the left ring from three o'clock clockwise, the right from nine anticlockwise, then in along both bars to meet in the middle as the halves seal", Effect.FANALE_REVERSE),
-        MEMBRANA("Membrana", "The opening run back: the rim lights at the edges and the membrane comes in on the same curves, its middle trailing, gathering into the seam", Effect.MEMBRANA),
     }
 
     private const val OPENING_KEY = "opening_effect"
@@ -123,11 +126,11 @@ object MotionConfig {
     private fun prefs(c: android.content.Context) = c.getSharedPreferences(PREFS, android.content.Context.MODE_PRIVATE)
 
     fun opening(c: android.content.Context): Opening =
-        Opening.entries.firstOrNull { it.effect.name == prefs(c).getString(OPENING_KEY, null) }
+        Opening.entries.firstOrNull { it.effect.name == migrate(prefs(c).getString(OPENING_KEY, null)) }
             ?: Opening.entries.firstOrNull { it.effect == style(c).opening } ?: Opening.FANALE
 
     fun closing(c: android.content.Context): Closing =
-        Closing.entries.firstOrNull { it.effect.name == prefs(c).getString(CLOSING_KEY, null) }
+        Closing.entries.firstOrNull { it.effect.name == migrate(prefs(c).getString(CLOSING_KEY, null)) }
             ?: Closing.entries.firstOrNull { it.effect == style(c).closing } ?: Closing.FANALE
 
     fun setOpening(c: android.content.Context, o: Opening) { prefs(c).edit().putString(OPENING_KEY, o.effect.name).apply(); apply(c) }
@@ -179,11 +182,11 @@ object MotionConfig {
     const val FANALE_CONTACT_P = 0.545f
 
     /**
-     * Membrana, as shares of the reveal's time: the membrane snaps taut at TAUT_T (the haptic
-     * click, and touch returns). Closing: the edges meet at CONTACT_P.
+     * Catenaria (26 Nov 2026, replacing Membrana), as shares of the reveal's time: the chain is
+     * pulled taut at TAUT_T (the haptic click, and touch returns). Closing: the halves meet at CONTACT_P.
      */
-    const val MEMBRANA_TAUT_T = 0.7f
-    const val MEMBRANA_CONTACT_P = 0.545f
+    const val CATENARIA_TAUT_T = 0.7f
+    const val CATENARIA_CONTACT_P = 0.545f
 
     /**
      * Fanale reversed, as shares of the reveal's time: the closing's contact (p = 0.545) comes at
@@ -238,7 +241,7 @@ object MotionConfig {
     /** For Scatto's preview: ms from an opening's climax to touch returning, at the designed speed. */
     fun climaxToTouchMs(e: Effect): Int = (REVEAL_MS * when (e) {
         Effect.FANALE -> FANALE_TOUCH_T - FANALE_LIGHTS_T
-        Effect.MEMBRANA -> 0f
+        Effect.CATENARIA -> 0f
         Effect.FANALE_REVERSE -> FANALE_REVERSE_TOUCH_T - FANALE_REVERSE_CLICK_T
         Effect.CIRCUITO -> CIRCUITO_TOUCH_T - CIRCUITO_MEET_T
         else -> 0.3f

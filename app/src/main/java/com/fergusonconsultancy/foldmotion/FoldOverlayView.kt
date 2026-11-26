@@ -16,6 +16,9 @@ import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
 
+/** Catenaria: how many links the chain is drawn with. */
+private const val CAT_LINKS = 40
+
 /**
  * Two effects in Visconti green, both one continuous motion, built in layers
  * the way car paint is: a coloured base, metallic flake, a clear coat that
@@ -453,10 +456,10 @@ class FoldOverlayView(context: Context) : View(context) {
                 if (mode == Mode.CLOSE) drawCircuitoClose(canvas, w, h) else drawCircuitoOpen(canvas, w, h)
                 canvas.restoreToCount(c)
             }
-            MotionConfig.Effect.MEMBRANA -> {
+            MotionConfig.Effect.CATENARIA -> {
                 val c = canvas.save()
                 if (MotionConfig.LEFT_TO_RIGHT) canvas.scale(-1f, 1f, w / 2f, 0f)
-                if (mode == Mode.CLOSE) drawMembranaClose(canvas, w, h) else drawMembranaOpen(canvas, w, h)
+                if (mode == Mode.CLOSE) drawCatenariaClose(canvas, w, h) else drawCatenaria(canvas, w, h)
                 canvas.restoreToCount(c)
             }
         }
@@ -1372,7 +1375,7 @@ class FoldOverlayView(context: Context) : View(context) {
         val t = FoldMath.unglide(1f - p)
         val cx = w / 2f
         val l = rosso
-        l.layout(w, h)
+        l.layout(w, h, turned = true)
         l.scheduleIgnite(1, t, 0.02f, 0.15f, 0.13f, 0.29f, barFromTip = false)
         l.scheduleIgnite(0, t, 0.42f, 0.54f, 0.30f, 0.43f, barFromTip = true)
         val bt = MotionConfig.FANALE_LIGHTS_T
@@ -1418,7 +1421,7 @@ class FoldOverlayView(context: Context) : View(context) {
     private fun drawFanaleClose(canvas: Canvas, w: Float, h: Float) {
         val cx = w / 2f
         val l = rosso
-        l.layout(w, h)
+        l.layout(w, h, turned = true)
         val q = buildTime()
         val e = closeTravel(q)
         val xl = cx * e; val xr = w - (w - cx) * e
@@ -1792,163 +1795,137 @@ class FoldOverlayView(context: Context) : View(context) {
 
     // endregion
 
-    // region Membrana (23 Oct 2026): Bellezza Necessaria
+    // region Catenaria (26 Nov 2026): Gaudí's hanging chain, replacing Membrana
 
-    private val memPath = Path()
-    private val memLayer = Paint()
-    private val memThin = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style = Paint.Style.STROKE
-        xfermode = android.graphics.PorterDuffXfermode(android.graphics.PorterDuff.Mode.DST_OUT)
-    }
-    private val memRim = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND }
-    private val memLens = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        xfermode = android.graphics.PorterDuffXfermode(android.graphics.PorterDuff.Mode.DST_OUT)
-    }
-    private var memBlurFor = 0f
-    private val memLensShader = RadialGradient(0f, 0f, 1f, Color.BLACK, Color.TRANSPARENT, Shader.TileMode.CLAMP)
-    // The rim light's fall-off along an edge, built once per rim colour (alpha set on the paint)
-    private var memFor: MotionConfig.Rim? = null
-    private var memCore: Shader? = null
-    private var memGlow: Shader? = null
-    private fun memFall(c: Int) = LinearGradient(0f, 0f, 0f, 1f,
-        intArrayOf(Color.argb(0, Color.red(c), Color.green(c), Color.blue(c)), c or (0xFF shl 24), Color.argb(0, Color.red(c), Color.green(c), Color.blue(c))),
-        floatArrayOf(0.04f, 0.5f, 0.96f), Shader.TileMode.CLAMP)
+    /*
+     * Gaudí found his arches by hanging chains and letting gravity draw the curve; the Bauhaus
+     * asks that nothing be there without a force behind it. Here the force is the fold itself:
+     * a chain of light of fixed length is held at the parting halves' top inner corners. Closed,
+     * the corners meet on the crease and the chain hangs straight down it (straight for the
+     * machine). As the halves part, its ends are carried apart and it takes the one shape physics
+     * allows, the catenary, swinging open and rising as the span grows (curved for the living).
+     * Your screen shows beneath the chain, between the halves; above it the dark is held up by
+     * the chain like cloth. Pulled almost taut it gives a small soft lift and leaves through the
+     * top edge: the climax, the click, touch returns. Closing is the same gesture run back.
+     */
+
+    private val catPath = Path()
+    private val catPts = FloatArray(2 * (CAT_LINKS + 1))
+    private val catGlow = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND; strokeJoin = Paint.Join.ROUND }
+    private val catCore = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND; strokeJoin = Paint.Join.ROUND }
+    private val catLink = Paint(Paint.ANTI_ALIAS_FLAG)
 
     /**
-     * One edge of the opening, hung from (x, top) and (x, bottom) and bowed at its middle by
-     * [bow] (positive bows towards +x), the way a membrane hangs between two anchors.
+     * The catenary's parameter a for anchors [span] apart on a chain of [length]: solves
+     * 2a sinh(span / 2a) = length, by bisection on b = span / 2a (sinh(b) / b = length / span).
+     * Returns 0 when the chain is all but taut.
      */
-    private fun memEdge(path: Path, x: Float, bow: Float, h: Float) {
-        path.moveTo(x, -h * 0.02f)
-        path.quadTo(x + 2f * bow, h * 0.5f, x, h * 1.02f)
+    private fun catenaryA(span: Float, length: Float): Float {
+        val ratio = length / span
+        if (ratio <= 1.00005f) return 0f
+        var lo = 1e-4; var hi = 30.0
+        repeat(40) {
+            val mid = (lo + hi) / 2
+            if (kotlin.math.sinh(mid) / mid < ratio) lo = mid else hi = mid
+        }
+        return (span / (2.0 * (lo + hi) / 2)).toFloat()
     }
 
     /**
-     * Draws the membrane: black everywhere except the opening between the left edge (anchor xl,
-     * bow bl) and the right edge (xr, br). Inside a layer, the membrane thins towards the
-     * opening's edges, so the content shows faintly through where it is stretched; then the
-     * rim light runs along each moving edge, brightest at its middle and falling off towards
-     * the anchors.
+     * Fills [catPts] with CAT_LINKS + 1 points at equal spacing along the chain, hung from
+     * (xl, ay) and (xr, ay), with its sag scaled by [give] (1 is the true catenary; a touch
+     * under 1 is the soft lift as it goes taut). Returns the sag at the middle.
      */
-    private fun membrane(canvas: Canvas, w: Float, h: Float, xl: Float, bl: Float, xr: Float, br: Float, rim: Float, lens: Float) {
-        val cx = w / 2f
-        val layer = canvas.saveLayer(0f, 0f, w + 1f, h, memLayer)
-        blackPaint.alpha = 255
-        // The opening, if any: the region between the two edges
-        val open = (xr + br) - (xl + bl) > 0.5f || xr - xl > 0.5f
-        memPath.reset()
-        if (open) {
-            memPath.addRect(0f, 0f, w + 1f, h, Path.Direction.CW)
-            memPath.moveTo(xl, -h * 0.02f)
-            memPath.quadTo(xl + 2f * bl, h * 0.5f, xl, h * 1.02f)
-            memPath.lineTo(xr, h * 1.02f)
-            memPath.quadTo(xr + 2f * br, h * 0.5f, xr, -h * 0.02f)
-            memPath.close()
-            memPath.fillType = Path.FillType.EVEN_ODD
-            canvas.drawPath(memPath, blackPaint)
-        } else {
-            canvas.drawRect(0f, 0f, w + 1f, h, blackPaint)
-        }
-        // The membrane is thinner where it is stretched: a soft translucent band along each edge
-        val thinA = (0.55f * (0.5f + 0.5f * density)).coerceAtMost(0.6f)
-        if (open && thinA > 0.01f) {
-            val bw = w * 0.05f
-            if (memBlurFor != bw) { memThin.maskFilter = android.graphics.BlurMaskFilter(bw * 0.6f, android.graphics.BlurMaskFilter.Blur.NORMAL); memBlurFor = bw }
-            memThin.strokeWidth = bw
-            memThin.alpha = (255 * thinA).toInt()
-            memPath.reset(); memEdge(memPath, xl, bl, h); canvas.drawPath(memPath, memThin)
-            memPath.reset(); memEdge(memPath, xr, br, h); canvas.drawPath(memPath, memThin)
-        }
-        // Tension before it gives: the membrane thins in a lens on the crease
-        if (lens > 0.004f) {
-            m.setScale(w * 0.06f, h * 0.42f); m.postTranslate(cx, h * 0.5f)
-            memLensShader.setLocalMatrix(m)
-            memLens.shader = memLensShader
-            memLens.alpha = (255 * min(1f, lens)).toInt()
-            canvas.drawRect(cx - w * 0.06f, h * 0.08f, cx + w * 0.06f, h * 0.92f, memLens)
-        }
-        canvas.restoreToCount(layer)
-        // The rim light on the moving edges
-        if (rim > 0.004f && open) {
-            val r = MotionConfig.RIM
-            if (memFor != r) { memCore = memFall(r.core); memGlow = memFall(r.glow); memFor = r }
-            m.setScale(1f, h)
-            memCore?.setLocalMatrix(m); memGlow?.setLocalMatrix(m)
-            for (i in 0..1) {
-                val x = if (i == 0) xl else xr
-                val b = if (i == 0) bl else br
-                if (x + 2f * b < -w * 0.02f || x + 2f * b > w * 1.02f) continue
-                memPath.reset(); memEdge(memPath, x, b, h)
-                // Opening (24 Oct 2026): a vibrant rim, a wide soft bloom under a brighter glow; closing stays restrained
-                val vivid = mode == Mode.OPEN
-                if (vivid) {
-                    memRim.shader = memGlow; memRim.alpha = (255 * min(1f, 0.2f * rim * density)).toInt(); memRim.strokeWidth = w * 0.045f
-                    canvas.drawPath(memPath, memRim)
-                }
-                memRim.shader = memGlow; memRim.alpha = (255 * min(1f, (if (vivid) 0.6f else 0.22f) * rim * density)).toInt(); memRim.strokeWidth = w * (if (vivid) 0.016f else 0.011f)
-                canvas.drawPath(memPath, memRim)
-                memRim.shader = memCore; memRim.alpha = (255 * min(1f, (if (vivid) 1f else 0.9f) * rim)).toInt(); memRim.strokeWidth = max(1.5f, w * (if (vivid) 0.0022f else 0.0016f))
-                canvas.drawPath(memPath, memRim)
+    private fun layChain(xl: Float, xr: Float, ay: Float, length: Float, give: Float): Float {
+        val span = xr - xl
+        val cx = (xl + xr) / 2f
+        if (span < 1f) {
+            // The ends together on the crease: the chain hangs straight down it, doubled
+            for (i in 0..CAT_LINKS) {
+                val k = 1f - abs(2f * i / CAT_LINKS - 1f)
+                catPts[2 * i] = cx; catPts[2 * i + 1] = ay + length / 2f * k * give
             }
-            memRim.shader = null
+            return length / 2f * give
         }
+        val a = catenaryA(span, length)
+        if (a <= 0f) {
+            for (i in 0..CAT_LINKS) { catPts[2 * i] = xl + span * i / CAT_LINKS; catPts[2 * i + 1] = ay }
+            return 0f
+        }
+        val half = span / 2f
+        val sag = a * kotlin.math.cosh(half / a) - a
+        val arcHalf = a * kotlin.math.sinh(half / a)
+        for (i in 0..CAT_LINKS) {
+            val sgm = -arcHalf + 2f * arcHalf * i / CAT_LINKS
+            val x = a * kotlin.math.asinh(sgm / a)
+            val y = sag - (a * kotlin.math.cosh(x / a) - a)
+            catPts[2 * i] = cx + x; catPts[2 * i + 1] = ay + y * give
+        }
+        return sag * give
     }
 
-    /**
-     * Opening. One black membrane over the screen, a fine seam on the crease from the first
-     * frame. Tension builds: the membrane thins in a lens on the crease. It gives: the opening's
-     * middle leads (a lens), the right edge first (the cover was pulled from the right), the
-     * anchors following on the magnetic curves until both edges have left the screen. Being soft,
-     * the edges overshoot a touch and snap taut: the climax, the click, and touch comes back.
-     * Concentrato: a fast opening keeps only the edges' trajectory.
-     */
-    private fun drawMembranaOpen(canvas: Canvas, w: Float, h: Float) {
+    private fun drawCatenaria(canvas: Canvas, w: Float, h: Float) {
         val t = FoldMath.unglide(1f - p)
         val cx = w / 2f
-        val over = w * 0.03f
-        // 25 Oct 2026: both edges part together and bow alike. The right edge used to lead and
-        // the left lag, so the opening drifted to one side of the crease and read as off-centre.
-        val aR = FoldMath.magnetOut(FoldMath.clamp((t - 0.16f) / 0.5f))
-        val aL = aR
-        val xr = cx + (w - cx + over) * aR
-        val xl = cx - (cx + over) * aL
-        // The middle leads, then relaxes with a soft overshoot as the membrane goes taut
-        fun bow(start: Float): Float {
-            val u = FoldMath.clamp((t - start) / 0.62f)
-            val lead = kotlin.math.sin(Math.PI.toFloat() * u)
-            // 24 Oct 2026: a smaller snap, so it settles taut rather than wobbling
-            val snap = -0.07f * kotlin.math.sin(Math.PI.toFloat() * FoldMath.clamp((u - 0.7f) / 0.3f))
-            return w * 0.16f * (lead + snap)
+        val taut = MotionConfig.CATENARIA_TAUT_T
+        // The halves part on the magnetic curves and are fully apart as the chain goes taut
+        val part = FoldMath.magnetOut(FoldMath.clamp((t - 0.06f) / (taut - 0.06f)))
+        val xl = cx - cx * part
+        val xr = cx + cx * part
+        // Its length: just more than the screen is wide, so it is nearly taut at full span, and
+        // closed it hangs halfway down the crease
+        val length = w * 1.006f
+        // As it goes taut the anchors lift a little past the top edge, taking the chain off screen
+        val lift = FoldMath.smooth(FoldMath.clamp((t - (taut - 0.1f)) / 0.18f))
+        val ay = -w * 0.07f * lift
+        // Soft material may overshoot: a small lift as it is pulled taut, settling back
+        val u = FoldMath.clamp((t - (taut - 0.06f)) / 0.16f)
+        val give = 1f - 0.35f * kotlin.math.sin(Math.PI.toFloat() * u) * (1f - u)
+        layChain(xl, xr, ay, length, give)
+
+        // The dark: everywhere except between the halves, beneath the chain
+        blackPaint.alpha = 255
+        if (xr - xl < 0.5f) {
+            canvas.drawRect(0f, 0f, w + 1f, h, blackPaint)
+        } else {
+            catPath.reset()
+            catPath.addRect(0f, 0f, w + 1f, h, Path.Direction.CW)
+            catPath.moveTo(catPts[0], catPts[1])
+            for (i in 1..CAT_LINKS) catPath.lineTo(catPts[2 * i], catPts[2 * i + 1])
+            catPath.lineTo(xr, h + 1f)
+            catPath.lineTo(xl, h + 1f)
+            catPath.close()
+            catPath.fillType = Path.FillType.EVEN_ODD
+            canvas.drawPath(catPath, blackPaint)
         }
-        val br = bow(0.1f)
-        val bl = -br
-        val lens = 0.2f * density * FoldMath.smooth(FoldMath.clamp(t / 0.12f)) * (1f - FoldMath.smooth(FoldMath.clamp((t - 0.12f) / 0.1f)))
-        val rim = FoldMath.smooth(FoldMath.clamp((t - 0.1f) / 0.06f)) * (1f - FoldMath.smooth(FoldMath.clamp((t - 0.62f) / 0.16f)))
-        membrane(canvas, w, h, xl, bl, xr, br, rim, lens)
-        // The seam, there from the first frame until the membrane gives
-        val seam = 1f - FoldMath.smooth(FoldMath.clamp((t - 0.1f) / 0.08f))
-        if (seam > 0.004f) {
-            linePaint.color = MotionConfig.RIM.core
-            linePaint.alpha = (255 * 0.55f * seam).toInt()
-            canvas.drawRect(cx - 0.75f, h * 0.06f, cx + 0.75f, h * 0.94f, linePaint)
-            linePaint.color = Color.rgb(233, 223, 200)
+
+        // The chain's light: there from the first frame, gone once it has left the screen
+        val on = 1f - FoldMath.smooth(FoldMath.clamp((t - taut) / 0.12f))
+        if (on <= 0.004f) return
+        val rim = MotionConfig.RIM
+        catPath.reset()
+        catPath.moveTo(catPts[0], catPts[1])
+        for (i in 1..CAT_LINKS) catPath.lineTo(catPts[2 * i], catPts[2 * i + 1])
+        catGlow.color = rim.glow
+        catGlow.strokeWidth = w * 0.014f
+        catGlow.alpha = (255 * min(1f, 0.3f * on * (0.4f + 0.6f * density))).toInt()
+        canvas.drawPath(catPath, catGlow)
+        catCore.color = rim.core
+        catCore.strokeWidth = max(1.4f, w * 0.0018f)
+        catCore.alpha = (255 * min(1f, 0.85f * on)).toInt()
+        canvas.drawPath(catPath, catCore)
+        // The links: one highlight, the lowest point, everything falling off towards the anchors
+        catLink.color = rim.core
+        val r = max(1.6f, w * 0.0032f)
+        for (i in 0..CAT_LINKS) {
+            val k = kotlin.math.sin(Math.PI.toFloat() * i / CAT_LINKS)
+            catLink.alpha = (255 * min(1f, on * (0.25f + 0.75f * k * k))).toInt()
+            canvas.drawCircle(catPts[2 * i], catPts[2 * i + 1], r * (0.6f + 0.4f * k), catLink)
         }
     }
 
-    /**
-     * Closing. The membrane is drawn in from both edges, the left a beat ahead (the fold travels
-     * left to right), its anchors leading and the middle lagging, so the opening narrows to a
-     * lens. The anchors meet on the crease (the click); surface tension closes the lens into a
-     * seam of light, which shrinks to the last point, dips into the hinge and goes out.
-     */
-    /**
-     * Membrana, closing (30 Oct 2026): the opening retraced, frame for frame. Opening, a seam of
-     * light on the crease gives, the membrane parts on two curves with its middle leading and
-     * snaps taut at the edges. Closing runs that back: the rim lights at the edges, the membrane
-     * comes in on the same curves with its middle trailing, and gathers into the seam on the
-     * crease, which fades. The same gesture, there and back.
-     */
-    private fun drawMembranaClose(canvas: Canvas, w: Float, h: Float) = drawMembranaOpen(canvas, w, h)
+    /** Catenaria closing: the opening retraced, frame for frame (p runs the other way). */
+    private fun drawCatenariaClose(canvas: Canvas, w: Float, h: Float) = drawCatenaria(canvas, w, h)
 
     // endregion
 

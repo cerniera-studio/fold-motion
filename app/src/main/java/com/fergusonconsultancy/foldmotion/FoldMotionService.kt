@@ -757,7 +757,7 @@ class FoldMotionService : Service(), SensorEventListener {
                 if (!tickDone && p >= MotionConfig.TICK_AT) { tickDone = true; if (!closeFelt) haptics.tick(closeSlowness) }
                 val clickP = when (MotionConfig.CLOSING_EFFECT) {
                     MotionConfig.Effect.FANALE, MotionConfig.Effect.CIRCUITO, MotionConfig.Effect.FANALE_REVERSE, MotionConfig.Effect.LAMP_GLASS -> MotionConfig.FANALE_CONTACT_P
-                    MotionConfig.Effect.MEMBRANA -> MotionConfig.MEMBRANA_CONTACT_P
+                    MotionConfig.Effect.CATENARIA -> MotionConfig.CATENARIA_CONTACT_P
                     else -> MotionConfig.CLICK_AT
                 }
                 // Started closeLead ms early, so a sequence's climax (not its first hit) lands on contact;
@@ -810,7 +810,7 @@ class FoldMotionService : Service(), SensorEventListener {
                     MotionConfig.Effect.SIGNATURE -> MotionConfig.SIGNATURE_BREAK_T
                     MotionConfig.Effect.FRAME_OF_LIGHT, MotionConfig.Effect.LIT_GLASS, MotionConfig.Effect.LAMP_GLASS -> MotionConfig.FRAME_SEAT_T
                     MotionConfig.Effect.FANALE -> MotionConfig.FANALE_LIGHTS_T
-                    MotionConfig.Effect.MEMBRANA -> MotionConfig.MEMBRANA_TAUT_T
+                    MotionConfig.Effect.CATENARIA -> MotionConfig.CATENARIA_TAUT_T
                     MotionConfig.Effect.FANALE_REVERSE -> MotionConfig.FANALE_REVERSE_CLICK_T
                     MotionConfig.Effect.CIRCUITO -> MotionConfig.CIRCUITO_MEET_T
                     else -> 2f
@@ -820,14 +820,14 @@ class FoldMotionService : Service(), SensorEventListener {
                 val touchAt = when (opening) {
                     MotionConfig.Effect.FRAME_OF_LIGHT, MotionConfig.Effect.LIT_GLASS, MotionConfig.Effect.LAMP_GLASS -> MotionConfig.FRAME_SEAT_T
                     MotionConfig.Effect.FANALE -> MotionConfig.FANALE_TOUCH_T
-                    MotionConfig.Effect.MEMBRANA -> MotionConfig.MEMBRANA_TAUT_T
+                    MotionConfig.Effect.CATENARIA -> MotionConfig.CATENARIA_TAUT_T
                     MotionConfig.Effect.FANALE_REVERSE -> MotionConfig.FANALE_REVERSE_TOUCH_T
                     MotionConfig.Effect.CIRCUITO -> MotionConfig.CIRCUITO_TOUCH_T
                     else -> 2f
                 }
                 // k is real time: the effects draw on unglide(glide(k)), which is k
                 // Started releaseLead ms early so the climax lands on the light's; nothing may follow it
-                // once touch is back (Membrana: touch returns on the climax, so nothing follows at all)
+                // once touch is back (Catenaria: touch returns on the climax, so nothing follows at all)
                 if (!releaseDone && (elapsed() + releaseLead) / revealMs >= clickAt) {
                     releaseDone = true
                     haptics.release(openSlowness, ((touchAt - clickAt) * revealMs).roundToInt().coerceAtLeast(0))

@@ -111,11 +111,42 @@ class Lamps(rosso: Boolean) {
     private var ringCx = 0f
     private var barY = 0f
 
-    fun layout(w: Float, h: Float) {
+    /**
+     * Fanale's figure 8 (Mechack's sketch, 26 Nov 2026): the bars join their rings at
+     * diagonally opposite points, the left at its upper right and the right at its lower left,
+     * each flowing into the bar line on a curve. The two lamps are then the same shape turned
+     * half a circle about the crease, and the light's path round one ring, across and round the
+     * other, opposite ways, is the waist of an 8: a nod to the Fold 8.
+     */
+    private var turned = false
+
+    fun layout(w: Float, h: Float, turned: Boolean = false) {
         this.w = w; this.h = h
+        this.turned = turned
         ringR = min(w * 0.075f, h * 0.15f)
         ringCx = w * 0.15f
-        barY = h * 0.5f - ringR * 0.18f
+        barY = if (turned) h * 0.5f else h * 0.5f - ringR * 0.18f
+    }
+
+    /** Turned lamps: where the bar leaves the left ring, as an angle (screen y runs down). */
+    private val TURN_JOIN = -0.9f
+
+    /**
+     * A turned lamp's bar bead, k from 0 at the ring to 1 at the tip: a curve leaving the ring
+     * along its circle and settling onto the bar line. Worked out for the left lamp; the right is
+     * the same turned half a circle about the centre of the screen.
+     */
+    private fun turnedBar(side: Int, k: Float, offset: Float, wantX: Boolean): Float {
+        val cy = h * 0.5f
+        val jx = ringCx + ringR * cos(TURN_JOIN); val jy = cy + ringR * sin(TURN_JOIN)
+        val tx = -sin(TURN_JOIN); val ty = cos(TURN_JOIN)
+        val p1x = jx + tx * ringR * 0.9f; val p1y = jy + ty * ringR * 0.9f
+        val p2x = jx + ringR * 1.6f; val p2y = barY
+        val p3x = w / 2f - tipGap; val p3y = barY
+        val u = 1f - k
+        val x = u * u * u * jx + 3f * u * u * k * p1x + 3f * u * k * k * p2x + k * k * k * p3x
+        val y = u * u * u * jy + 3f * u * u * k * p1y + 3f * u * k * k * p2y + k * k * k * p3y
+        return if (wantX) offset + (if (side == 0) x else w - x) else (if (side == 0) y else h - y)
     }
 
     /** Where the bar's tip sits, as a distance in from the crease. */
@@ -125,6 +156,7 @@ class Lamps(rosso: Boolean) {
     fun beadX(side: Int, i: Int, offset: Float): Float {
         val dir = if (side == 0) 1f else -1f // towards the crease
         val outer = if (side == 0) ringCx else w - ringCx
+        if (turned && i >= RING_BEADS) return turnedBar(side, (i - RING_BEADS) / (BAR_BEADS - 1f), offset, true)
         return offset + if (i < RING_BEADS) outer + ringR * cos(ringAngle(side, i))
         else {
             val k = (i - RING_BEADS) / (BAR_BEADS - 1f)
@@ -135,7 +167,9 @@ class Lamps(rosso: Boolean) {
     }
 
     fun beadY(side: Int, i: Int): Float =
-        if (i < RING_BEADS) h * 0.5f + ringR * sin(ringAngle(side, i)) else barY
+        if (i < RING_BEADS) h * 0.5f + ringR * sin(ringAngle(side, i))
+        else if (turned) turnedBar(side, (i - RING_BEADS) / (BAR_BEADS - 1f), 0f, false)
+        else barY
 
     /**
      * Ring beads are numbered from where the bar meets the ring, sweeping first over the top
@@ -143,7 +177,7 @@ class Lamps(rosso: Boolean) {
      */
     private fun ringAngle(side: Int, i: Int): Float {
         val k = i / RING_BEADS.toFloat()
-        val attach = if (side == 0) -0.18f else (Math.PI.toFloat() + 0.18f)
+        val attach = attach(side)
         val sweep = if (side == 0) -1f else 1f
         return attach + sweep * 2f * Math.PI.toFloat() * k
     }
@@ -237,7 +271,11 @@ class Lamps(rosso: Boolean) {
     }
 
     /** The angle at which a bar leaves its ring: three o'clock on the left lamp, nine on the right. */
-    fun attach(side: Int) = if (side == 0) -0.18f else Math.PI.toFloat() + 0.18f
+    fun attach(side: Int) = when {
+        turned -> if (side == 0) TURN_JOIN else TURN_JOIN + Math.PI.toFloat()
+        side == 0 -> -0.18f
+        else -> Math.PI.toFloat() + 0.18f
+    }
 
     /** Where a bar's tip sits (screen x), for the light that crosses the gap to the crease. */
     fun tipX(side: Int, offset: Float) = beadX(side, RING_BEADS + BAR_BEADS - 1, offset)

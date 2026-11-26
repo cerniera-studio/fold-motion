@@ -127,8 +127,8 @@ class Suono(private val context: Context) {
             Haptics.Voice.CAVEAU -> Voice(50f, 0.130f, 4.5f, floatArrayOf(820f, 1310f), 0.035f, 0.28f, 0.22f, 0.3f)
             // A jewel case: a soft velvet pop and a bright spring that rings
             Haptics.Voice.SCRIGNO -> Voice(140f, 0.022f, 2.0f, floatArrayOf(4200f, 6350f), 0.060f, 0.32f, 0.10f, 0.6f)
-            // A membrane: an elastic body, a short dry snap, no ring
-            Haptics.Voice.MEMBRANA -> Voice(110f, 0.028f, 2.5f, floatArrayOf(2600f), 0.004f, 0.15f, 0.25f, 0.4f)
+            // A chain: a light body, a short dry snap as it goes taut, no ring
+            Haptics.Voice.CATENARIA -> Voice(110f, 0.028f, 2.5f, floatArrayOf(2600f), 0.004f, 0.15f, 0.25f, 0.4f)
         }
 
         /** The sound for these hits, as mono float PCM at [RATE]. Pure, so it can be exported and checked. */
