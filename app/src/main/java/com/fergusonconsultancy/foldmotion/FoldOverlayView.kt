@@ -19,6 +19,9 @@ import kotlin.math.min
 /** Catenaria: how many links the chain is drawn with. */
 private const val CAT_LINKS = 40
 
+/** Catenaria's spill of light onto the screen beneath the chain: (stroke width as a share of the screen, strength). */
+private val CAT_SPILL = arrayOf(0.11f to 0.06f, 0.06f to 0.09f, 0.03f to 0.14f)
+
 /**
  * Two effects in Visconti green, both one continuous motion, built in layers
  * the way car paint is: a coloured base, metallic flake, a clear coat that
@@ -1814,6 +1817,21 @@ class FoldOverlayView(context: Context) : View(context) {
     private val catGlow = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND; strokeJoin = Paint.Join.ROUND }
     private val catCore = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND; strokeJoin = Paint.Join.ROUND }
     private val catLink = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val catWin = Path()
+    private val catSpill = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND; strokeJoin = Paint.Join.ROUND }
+    private val catDrape = Paint(Paint.ANTI_ALIAS_FLAG)
+    private var catDrapeRim: MotionConfig.Rim? = null
+
+    /** The drape's sheen: black up top, warming to a deep tone of the chain's light at its edge. Built once per colour. */
+    private fun drapeShader(rim: MotionConfig.Rim): Shader {
+        if (catDrapeRim != rim || catDrape.shader == null) {
+            val deep = Color.argb(255, Color.red(rim.glow) / 5, Color.green(rim.glow) / 5, Color.blue(rim.glow) / 5)
+            catDrape.shader = LinearGradient(0f, 0f, 0f, 1f, intArrayOf(Color.BLACK, Color.BLACK, deep),
+                floatArrayOf(0f, 0.55f, 1f), Shader.TileMode.CLAMP)
+            catDrapeRim = rim
+        }
+        return catDrape.shader
+    }
 
     /**
      * The catenary's parameter a for anchors [span] apart on a chain of [length]: solves
@@ -1880,8 +1898,8 @@ class FoldOverlayView(context: Context) : View(context) {
         val ay = -w * 0.07f * lift
         // Soft material may overshoot: a small lift as it is pulled taut, settling back
         val u = FoldMath.clamp((t - (taut - 0.06f)) / 0.16f)
-        val give = 1f - 0.35f * kotlin.math.sin(Math.PI.toFloat() * u) * (1f - u)
-        layChain(xl, xr, ay, length, give)
+        val give = 1f - 0.55f * kotlin.math.sin(Math.PI.toFloat() * u) * (1f - u)
+        val sag = layChain(xl, xr, ay, length, give)
 
         // The dark: everywhere except between the halves, beneath the chain
         blackPaint.alpha = 255
@@ -1900,27 +1918,79 @@ class FoldOverlayView(context: Context) : View(context) {
         }
 
         // The chain's light: there from the first frame, gone once it has left the screen
-        val on = 1f - FoldMath.smooth(FoldMath.clamp((t - taut) / 0.12f))
+        val on = (1f - FoldMath.smooth(FoldMath.clamp((t - taut) / 0.12f))) * brightness
         if (on <= 0.004f) return
         val rim = MotionConfig.RIM
         catPath.reset()
         catPath.moveTo(catPts[0], catPts[1])
         for (i in 1..CAT_LINKS) catPath.lineTo(catPts[2 * i], catPts[2 * i + 1])
+        val open = xr - xl >= 0.5f
+
+        if (open) {
+            // The window beneath the chain, for the drape and the spill
+            catWin.reset()
+            catWin.moveTo(catPts[0], catPts[1])
+            for (i in 1..CAT_LINKS) catWin.lineTo(catPts[2 * i], catPts[2 * i + 1])
+            catWin.lineTo(xr, h + 1f); catWin.lineTo(xl, h + 1f); catWin.close()
+
+            // The drape: the dark the chain holds up is heavy cloth, its sheen warming towards
+            // the lit edge it hangs from
+            val low = ay + sag
+            if (low > 1f) {
+                canvas.save()
+                canvas.clipOutPath(catWin)
+                m.setScale(1f, low + w * 0.01f); m.postTranslate(0f, 0f)
+                drapeShader(rim).setLocalMatrix(m)
+                catDrape.alpha = (255 * on.coerceAtMost(1f)).toInt()
+                canvas.drawRect(xl, 0f, xr, low + w * 0.01f, catDrape)
+                canvas.restore()
+            }
+
+            // The spill: warm light falling from the chain onto the screen beneath it, deepest
+            // under the lowest point, a few soft layers rather than a blur
+            canvas.save()
+            canvas.clipPath(catWin)
+            catSpill.color = rim.glow
+            for ((wid, al) in CAT_SPILL) {
+                catSpill.strokeWidth = w * wid
+                catSpill.alpha = (255 * min(1f, al * on * (0.5f + 0.5f * density))).toInt()
+                canvas.drawPath(catPath, catSpill)
+            }
+            canvas.restore()
+        }
+
+        // The chain itself: a warm glow, then a firm core
         catGlow.color = rim.glow
-        catGlow.strokeWidth = w * 0.014f
-        catGlow.alpha = (255 * min(1f, 0.3f * on * (0.4f + 0.6f * density))).toInt()
+        catGlow.strokeWidth = w * 0.02f
+        catGlow.alpha = (255 * min(1f, 0.42f * on)).toInt()
         canvas.drawPath(catPath, catGlow)
-        catCore.color = rim.core
-        catCore.strokeWidth = max(1.4f, w * 0.0018f)
-        catCore.alpha = (255 * min(1f, 0.85f * on)).toInt()
+        catCore.color = rim.glow
+        catCore.strokeWidth = max(2f, w * 0.0042f)
+        catCore.alpha = (255 * min(1f, 0.95f * on)).toInt()
         canvas.drawPath(catPath, catCore)
-        // The links: one highlight, the lowest point, everything falling off towards the anchors
-        catLink.color = rim.core
-        val r = max(1.6f, w * 0.0032f)
+
+        // The links: lit pearls, heaviest at the lowest point and lit from the upper left. As it
+        // is pulled taut, one highlight runs from the middle out to both anchors: the tension
+        // arriving, the only bright thing on the screen at that moment
+        val wave = FoldMath.clamp((t - (taut - 0.05f)) / 0.13f)
+        val waving = wave > 0f && wave < 1f
         for (i in 0..CAT_LINKS) {
+            val x = catPts[2 * i]; val y = catPts[2 * i + 1]
             val k = kotlin.math.sin(Math.PI.toFloat() * i / CAT_LINKS)
-            catLink.alpha = (255 * min(1f, on * (0.25f + 0.75f * k * k))).toInt()
-            canvas.drawCircle(catPts[2 * i], catPts[2 * i + 1], r * (0.6f + 0.4f * k), catLink)
+            var lit = 0.35f + 0.65f * k * k
+            if (waving) {
+                val d = abs(2f * i / CAT_LINKS - 1f) - wave
+                lit += 1.1f * kotlin.math.exp(-(d * d) / 0.006f) * (1f - 0.5f * wave)
+            }
+            val r = w * (0.0042f + 0.0046f * k)
+            catLink.color = rim.glow
+            catLink.alpha = (255 * min(1f, 0.16f * lit * on)).toInt()
+            canvas.drawCircle(x, y, r * 2.3f, catLink)
+            catLink.alpha = (255 * min(1f, (0.55f + 0.45f * lit) * on)).toInt()
+            canvas.drawCircle(x, y, r, catLink)
+            catLink.color = rim.core
+            catLink.alpha = (255 * min(1f, 0.9f * lit * on)).toInt()
+            canvas.drawCircle(x - r * 0.3f, y - r * 0.3f, r * 0.45f, catLink)
         }
     }
 

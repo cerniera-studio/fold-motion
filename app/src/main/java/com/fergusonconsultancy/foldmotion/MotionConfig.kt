@@ -289,6 +289,13 @@ object MotionConfig {
 
     /** Stay black this long after the effect if no screen switch follows, then fade out. */
     const val HOLD_TIMEOUT_MS = 600L
+
+    /**
+     * A slow close waits for the hinge to report shut; past this many ms into the effect (at
+     * the designed speed) the phone is taken to be held part-folded and the screen is given back.
+     * Kept under WATCHDOG_MS.
+     */
+    const val SLOW_CLOSE_WAIT_MS = 2600L
     const val FADE_MS = 200L
 
     /**

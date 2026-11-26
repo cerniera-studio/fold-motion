@@ -129,11 +129,29 @@ class FoldMotionService : Service(), SensorEventListener {
     private var finaleMs = MotionConfig.FINALE_MS.toFloat()
     private var finaleFromP = MotionConfig.BUILD_END
 
+    /** How long the build-up was planned to take; finaleAt moves, this does not. */
+    private var buildMs = 1f
+
+    /**
+     * A slow close (26 Nov 2026): the plan is made from how fast this owner usually closes, so
+     * a slower close used to finish, hold black, time out, fade back and then play again when
+     * the hinge finally reported shut. Now, if the build-up runs out before the hinge has
+     * reported closed, the effect waits for it: the build-up keeps going, ever more slowly
+     * towards contact, and the finale plays the moment the hinge says shut. True from then
+     * until the hinge reports, or the wait gives up (the phone held part-folded).
+     */
+    private var awaitingHinge = false
+    private var hingeShut = false
+
     /** Closing progress at t ms into the effect, following the plan. */
     private fun planP(t: Float): Float =
         if (t < finaleAt) {
             // Drawn in by magnetic attraction: unhurried, then a strengthening pull, then contact
-            MotionConfig.BUILD_END * FoldMath.magnetIn(FoldMath.clamp(t / finaleAt.coerceAtLeast(1f)))
+            var f = t / buildMs.coerceAtLeast(1f)
+            // Waiting for the hinge: past 80% of the way the build-up eases ever closer to
+            // contact without reaching it, so the motion keeps pace with a slow hand
+            if (awaitingHinge && f > 0.8f) f = 0.8f + 0.2f * (1f - kotlin.math.exp(-(f - 0.8f) / 0.35f))
+            MotionConfig.BUILD_END * FoldMath.magnetIn(FoldMath.clamp(f))
         } else {
             val u = FoldMath.clamp((t - finaleAt) / finaleMs)
             // The finale settles rather than stops: smoothstep, so it eases out to black
@@ -513,15 +531,20 @@ class FoldMotionService : Service(), SensorEventListener {
             phase == Phase.ARMED && closing -> finish()
             // Closing the inner screen
             phase == Phase.IDLE && innerNow && closing && !bounce -> startClose(now, scale)
-            // This close is quicker than usual: the hinge says closed while still building up,
-            // so go straight to the finale from wherever the build-up has reached
+            // The hinge says closed while still building up (a quicker close than usual, or a slow
+            // one the effect has been waiting for): straight to the finale from wherever it is
             phase == Phase.PLAYING && closing && angle <= 1f && elapsed() < finaleAt -> {
                 val t = elapsed()
+                hingeShut = true
                 finaleFromP = planP(t)
+                val waited = awaitingHinge
+                awaitingHinge = false
                 finaleAt = t
                 playMs = finaleAt + finaleMs
-                EventLog.add(this, "Hinge reported closed ${t.roundToInt()}ms in: straight to the finale")
+                EventLog.add(this, if (waited) "Hinge reported closed ${t.roundToInt()}ms in, after a slow close: finale now"
+                    else "Hinge reported closed ${t.roundToInt()}ms in: straight to the finale")
             }
+            phase == Phase.PLAYING && closing && angle <= 1f -> hingeShut = true
             // Opened back up mid-fold: let the blades go
             (phase == Phase.PLAYING || phase == Phase.HOLDING) && currentInner && !closing -> {
                 fadeFrom = currentProgress()
@@ -597,6 +620,9 @@ class FoldMotionService : Service(), SensorEventListener {
         overlay?.brightness = MotionConfig.closeBrightness(this)
         val plan = Plan.make(predicted?.let { it }, scale / speed, MotionConfig.finaleMsFor(MotionConfig.CLOSING_EFFECT))
         finaleAt = plan.buildMs
+        buildMs = plan.buildMs
+        awaitingHinge = false
+        hingeShut = lastAngle in 0f..1f
         finaleMs = plan.finaleMs
         // Concentrato: less time to build means a faster close, so fewer details
         val full = (MotionConfig.EFFECT_MS - MotionConfig.FINALE_MS).toFloat() * scale.coerceAtLeast(0.01f)
@@ -749,6 +775,22 @@ class FoldMotionService : Service(), SensorEventListener {
         when (phase) {
             Phase.IDLE -> { finish(); return }
             Phase.PLAYING -> {
+                // The build-up has run its planned course but the hinge has not reported shut:
+                // a slower close than usual, so wait for it rather than finish early
+                if (!awaitingHinge && !hingeShut && t >= finaleAt && finaleAt == buildMs && lastAngle > 1f && currentInner) {
+                    awaitingHinge = true
+                    finaleAt = Float.MAX_VALUE
+                    EventLog.add(this, "Slower close than usual: waiting for the hinge (${lastAngle.roundToInt()}°)")
+                }
+                // Held part-folded rather than closing: give the screen back
+                if (awaitingHinge && t > kotlin.math.min(MotionConfig.SLOW_CLOSE_WAIT_MS * scale, MotionConfig.WATCHDOG_MS - 200f)) {
+                    awaitingHinge = false
+                    EventLog.add(this, "No hinge report after ${t.roundToInt()}ms: phone held part-folded, screen given back")
+                    fadeFrom = planP(t)
+                    enter(Phase.FADING)
+                    Choreographer.getInstance().postFrameCallback(frameCallback)
+                    return
+                }
                 val p = planP(t)
                 val k = if (t >= finaleAt + finaleMs) 1f else 0f
                 view.show(p)
@@ -762,7 +804,7 @@ class FoldMotionService : Service(), SensorEventListener {
                 }
                 // Started closeLead ms early, so a sequence's climax (not its first hit) lands on contact;
                 // what follows the climax must fit in the finale, the light's last moment
-                if (!clickDone && planP(t + closeLead) >= clickP) {
+                if (!clickDone && !awaitingHinge && planP(t + closeLead) >= clickP) {
                     clickDone = true
                     if (!closeFelt) { closeFelt = true; haptics.click(closeSlowness, finaleMs.roundToInt()) }
                 }
