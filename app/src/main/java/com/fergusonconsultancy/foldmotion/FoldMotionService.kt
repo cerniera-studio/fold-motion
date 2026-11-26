@@ -8,6 +8,7 @@ import android.content.BroadcastReceiver
 import android.content.ComponentCallbacks
 import android.content.Context
 import android.content.Intent
+import android.content.SharedPreferences
 import android.content.IntentFilter
 import android.content.pm.ServiceInfo
 import android.content.res.Configuration
@@ -50,6 +51,8 @@ class FoldMotionService : Service(), SensorEventListener {
     private lateinit var sensorManager: SensorManager
     private var hingeSensor: Sensor? = null
     private var hingeSensorPlain: Sensor? = null
+    /** True while the hinge sensors are registered, so waking the screen doesn't register them twice. */
+    private var listening = false
 
     private lateinit var windowManager: WindowManager
     private var windowContext: Context? = null
@@ -302,6 +305,7 @@ class FoldMotionService : Service(), SensorEventListener {
 
     override fun onDestroy() {
         EventLog.add(this, "Service stopped")
+        getSharedPreferences("fold_motion", MODE_PRIVATE).unregisterOnSharedPreferenceChangeListener(choiceListener)
         stopListening()
         if (::sensorManager.isInitialized) Ambient.stop(sensorManager)
         runCatching { unregisterReceiver(screenReceiver) }
@@ -415,10 +419,17 @@ class FoldMotionService : Service(), SensorEventListener {
 
     // region Hinge sensor
 
+    /**
+     * The sensors stay registered while the screen is off, so on screen-on this is usually a
+     * no-op. Registering an already-registered listener makes Android answer false, which used
+     * to be logged as a failure even though the hinge was being heard all along.
+     */
     private fun startListening() {
+        if (listening) return
         val a = hingeSensor?.let { sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_GAME) } ?: false
         val b = hingeSensorPlain?.let { sensorManager.registerListener(this, it, SensorManager.SENSOR_DELAY_GAME) } ?: false
-        if (!a && !b) EventLog.add(this, "Could not register for hinge events")
+        listening = a || b
+        if (!listening) EventLog.add(this, "Could not register for hinge events")
     }
 
     /** Records the reason if the service ever crashes, then lets Android handle it as normal. */
@@ -445,6 +456,7 @@ class FoldMotionService : Service(), SensorEventListener {
 
     private fun stopListening() {
         if (::sensorManager.isInitialized) sensorManager.unregisterListener(this)
+        listening = false
         finish()
     }
 
@@ -866,23 +878,49 @@ class FoldMotionService : Service(), SensorEventListener {
 
     // region Foreground notification
 
-    private fun startAsForeground() {
-        val channelId = "fold_motion"
-        getSystemService(NotificationManager::class.java).createNotificationChannel(
-            NotificationChannel(channelId, "Fold Motion", NotificationManager.IMPORTANCE_LOW)
-        )
-        val notification = Notification.Builder(this, channelId)
+    private val notificationChannel = "fold_motion"
+    private var notificationText = ""
+
+    /** Kept as a field: SharedPreferences holds its listeners weakly. */
+    private val choiceListener = SharedPreferences.OnSharedPreferenceChangeListener { _, _ -> refreshNotification() }
+
+    /** What the notification says: the opening and closing actually chosen, read fresh each time. */
+    private fun describeChoice(): String {
+        val open = MotionConfig.opening(this).label
+        val close = MotionConfig.closing(this).label
+        return if (open == close) "$open, opening and closing" else "$open opening, $close closing"
+    }
+
+    private fun buildNotification(text: String): Notification =
+        Notification.Builder(this, notificationChannel)
             .setSmallIcon(android.R.drawable.ic_menu_rotate)
             .setContentTitle("Fold Motion is running")
-            .setContentText("Arch Aperture closing, Lit Glass opening")
+            .setContentText(text)
             .setOngoing(true)
+            .setOnlyAlertOnce(true)
             .build()
+
+    private fun startAsForeground() {
+        getSystemService(NotificationManager::class.java).createNotificationChannel(
+            NotificationChannel(notificationChannel, "Fold Motion", NotificationManager.IMPORTANCE_LOW)
+        )
+        notificationText = describeChoice()
+        val notification = buildNotification(notificationText)
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
             startForeground(1, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
         } else {
             startForeground(1, notification)
         }
+        getSharedPreferences("fold_motion", MODE_PRIVATE).registerOnSharedPreferenceChangeListener(choiceListener)
+    }
+
+    /** Re-posts the notification only when the chosen effects have actually changed. */
+    private fun refreshNotification() {
+        val text = describeChoice()
+        if (text == notificationText) return
+        notificationText = text
+        getSystemService(NotificationManager::class.java).notify(1, buildNotification(text))
     }
 
     // endregion
