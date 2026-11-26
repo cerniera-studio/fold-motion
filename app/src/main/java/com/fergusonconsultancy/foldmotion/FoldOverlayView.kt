@@ -1982,7 +1982,7 @@ class FoldOverlayView(context: Context) : View(context) {
                 val d = abs(2f * i / CAT_LINKS - 1f) - wave
                 lit += 1.1f * kotlin.math.exp(-(d * d) / 0.006f) * (1f - 0.5f * wave)
             }
-            val r = w * (0.0042f + 0.0046f * k)
+            val r = w * (0.0040f + 0.0035f * k)
             catLink.color = rim.glow
             catLink.alpha = (255 * min(1f, 0.16f * lit * on)).toInt()
             canvas.drawCircle(x, y, r * 2.3f, catLink)
