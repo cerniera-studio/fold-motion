@@ -653,6 +653,8 @@ class FoldMotionService : Service(), SensorEventListener {
         revealMs = MotionConfig.COVER_POUR_MS * animScale().coerceAtLeast(0.01f)
         EventLog.add(this, "Travaso: pouring onto the cover from the ${listOf("left", "top", "right", "bottom")[edge]} edge, ${size.x}x${size.y}")
         stats.reset()
+        panelLit = false
+        panelWaitFrom = SystemClock.uptimeMillis()
         enter(Phase.COVER_POUR)
     }
 
@@ -946,7 +948,23 @@ class FoldMotionService : Service(), SensorEventListener {
                 }
             }
             Phase.COVER_POUR -> {
-                val k = FoldMath.clamp(t / revealMs)
+                if (!panelLit) {
+                    // Hold black until the cover reports it is lit (27 Nov 2026): started at the
+                    // switch, the pour was spent on a panel still powering up, and only its last
+                    // stretch, light in the corners, was ever seen. Capped, never stuck
+                    val waited = SystemClock.uptimeMillis() - panelWaitFrom
+                    if (display?.state == Display.STATE_ON && waited >= MotionConfig.COVER_SETTLE_MS ||
+                        waited >= MotionConfig.COVER_WAIT_MAX_MS) {
+                        panelLit = true
+                        EventLog.add(this, "Travaso: cover lit after ${waited}ms, pour starts")
+                        phaseAt = SystemClock.uptimeMillis()
+                    } else {
+                        view.show(1f)
+                        Choreographer.getInstance().postFrameCallback(frameCallback)
+                        return
+                    }
+                }
+                val k = FoldMath.clamp(elapsed() / revealMs)
                 view.show(1f - FoldMath.glide(k))
                 stats.onFrame(frameTimeNanos)
                 if (k >= 1f) {

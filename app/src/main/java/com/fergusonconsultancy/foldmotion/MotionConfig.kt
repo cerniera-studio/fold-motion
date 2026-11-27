@@ -336,7 +336,14 @@ object MotionConfig {
     const val HOLD_TIMEOUT_MS = 600L
 
     /** Travaso: how long the pour onto the cover takes, at the designed speed. */
-    const val COVER_POUR_MS = 520L
+    const val COVER_POUR_MS = 620L
+
+    /**
+     * Travaso: the pour onto the cover waits for the cover to report it is lit, then this many ms
+     * more for the first frames to reach the glass; never longer than COVER_WAIT_MAX_MS in all.
+     */
+    const val COVER_SETTLE_MS = 60L
+    const val COVER_WAIT_MAX_MS = 700L
 
     /**
      * A slow close waits for the hinge to report shut (or for One UI to switch to the cover: on
