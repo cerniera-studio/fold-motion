@@ -422,7 +422,16 @@ class FoldMotionService : Service(), SensorEventListener {
     private fun setActiveWindow(active: Boolean, touchThrough: Boolean = false) {
         val view = overlay ?: return
         if (!::params.isInitialized) return
-        val alpha = if (active && !touchThrough) 1f else MotionConfig.IDLE_WINDOW_ALPHA
+        // Covering the screen means not letting touches through (27 Nov 2026): Android caps an
+        // overlay that has FLAG_NOT_TOUCHABLE at 80% opacity, whatever alpha it asks for (AOSP
+        // "Cap alpha to max if SAW + FLAG_NOT_TOUCHABLE"), which left every effect's black
+        // see-through. So while an effect covers the screen the window takes touches, briefly,
+        // and is drawn fully opaque; touch-through returns with the 80% alpha at the opening's
+        // climax (rule 5), between effects, and for the light-only cover arrival
+        val through = touchThrough || overlay?.coverPour == true
+        val alpha = if (active && !through) 1f else MotionConfig.IDLE_WINDOW_ALPHA
+        val flags = if (active && !through) params.flags and WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE.inv()
+            else params.flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
         val hz = if (active) display?.supportedModes?.maxOfOrNull { it.refreshRate } ?: 0f else 0f
         // Opening uses a fixed square larger than either panel, so the window is not
         // resized when One UI switches screens. A resize means a new, empty buffer
@@ -435,8 +444,9 @@ class FoldMotionService : Service(), SensorEventListener {
             overlay?.mode == FoldOverlayView.Mode.OPEN -> oversize()
             else -> WindowManager.LayoutParams.MATCH_PARENT
         }
-        if (params.alpha == alpha && params.preferredRefreshRate == hz && params.width == size) return
+        if (params.alpha == alpha && params.preferredRefreshRate == hz && params.width == size && params.flags == flags) return
         params.alpha = alpha
+        params.flags = flags
         params.preferredRefreshRate = hz
         params.width = size
         params.height = size
@@ -637,7 +647,8 @@ class FoldMotionService : Service(), SensorEventListener {
     private fun logWindow(label: String) {
         val v = overlay ?: return
         val loc = IntArray(2).also { runCatching { v.getLocationOnScreen(it) } }
-        EventLog.add(this, "Window $label: alpha ${"%.2f".format(params.alpha)}, view ${v.width}x${v.height} at ${loc[0]},${loc[1]}, " +
+        val touch = if (params.flags and WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE != 0) "touch-through (Android caps at 80%)" else "opaque"
+        EventLog.add(this, "Window $label: alpha ${"%.2f".format(params.alpha)} $touch, view ${v.width}x${v.height} at ${loc[0]},${loc[1]}, " +
             "shown ${v.isShown}, attached ${v.isAttachedToWindow}, display ${v.display?.displayId ?: -1} state ${v.display?.state ?: -1}")
     }
 

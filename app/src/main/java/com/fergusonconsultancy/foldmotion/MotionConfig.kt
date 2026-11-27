@@ -389,8 +389,9 @@ object MotionConfig {
 
     /**
      * Normal window opacity. Android 12+ blocks touches through another app's
-     * window above 80%, so the window only goes fully opaque while an effect
-     * is on screen, and always drops back afterwards.
+     * window above 80%, and caps a touch-through overlay at 80% however opaque it
+     * asks to be; so while an effect covers the screen the window takes touches
+     * and is fully opaque, and it always drops back to touch-through at 80% after.
      */
     const val IDLE_WINDOW_ALPHA = 0.8f
 
