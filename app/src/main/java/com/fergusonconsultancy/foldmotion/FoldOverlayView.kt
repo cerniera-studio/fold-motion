@@ -1836,7 +1836,10 @@ class FoldOverlayView(context: Context) : View(context) {
     """.trimIndent()
 
     private val travasoShader: Any? = if (android.os.Build.VERSION.SDK_INT >= 33)
-        runCatching { android.graphics.RuntimeShader(travasoAgsl) }.getOrNull() else null
+        runCatching { android.graphics.RuntimeShader(travasoAgsl) }
+            .onSuccess { android.util.Log.i("FoldMotion", "Travaso shader: compiled") }
+            .onFailure { android.util.Log.e("FoldMotion", "Travaso shader failed: ${it.message}") }
+            .getOrNull() else null
     private val travasoPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val travasoPath = Path()
     private val travasoStroke = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeJoin = Paint.Join.ROUND }
