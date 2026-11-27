@@ -1944,8 +1944,44 @@ class FoldOverlayView(context: Context) : View(context) {
         }
     }
 
-    /** Travaso closing: the opening retraced, frame for frame (p runs the other way). */
-    private fun drawTravasoClose(canvas: Canvas, w: Float, h: Float) = drawTravaso(canvas, w, h)
+    /**
+     * Travaso closing (27 Nov 2026): its own timeline, not the opening run backwards. Run
+     * backwards, the opening's last stretch (the liquid just past the edges) became the first,
+     * so a close showed only light at the corners for a second and squeezed the drain into the
+     * finale, where the switch to the cover cut it off. Now the drain happens while you fold:
+     * through the build-up the sides draw in to the crease and the liquid rounds up into a
+     * standing column (where a slow close waits, keeping pace); the finale drains the column
+     * into the crease, the last of the light going out on the hinge as the halves meet.
+     */
+    private fun drawTravasoClose(canvas: Canvas, w: Float, h: Float) {
+        val q = p
+        if (q <= 0f) return
+        val build = MotionConfig.BUILD_END
+        val cx = w / 2f; val cy = h / 2f
+        val aFull = w * 0.5f * 1.035f
+        val bFull = h * 0.5f * 1.035f
+        val colA = w * 0.035f
+        val a: Float; val b: Float; val n: Float
+        if (q < build) {
+            // Sides first: drawn in to the crease, the shape rounding up as it goes
+            val u = q / build
+            val s = FoldMath.magnetIn(u)
+            a = aFull + (colA - aFull) * s
+            b = bFull + (bFull * 0.82f - bFull) * FoldMath.smooth(u)
+            n = 11f + (3f - 11f) * FoldMath.smooth(u)
+        } else {
+            // Then the column, drained into the crease
+            val v = FoldMath.clamp((q - build) / (1f - build))
+            val s = FoldMath.magnetIn(v)
+            a = colA + (w * 0.003f - colA) * s
+            b = bFull * 0.82f * (1f - s)
+            n = 3f - FoldMath.smooth(v)
+        }
+        if (b <= 1f) return
+        // The meniscus is lit from the first frame
+        val fade = FoldMath.smooth(FoldMath.clamp(q / 0.04f))
+        drawLiquid(canvas, w, h, cx, cy, a, b, n, fade)
+    }
 
     // endregion
 

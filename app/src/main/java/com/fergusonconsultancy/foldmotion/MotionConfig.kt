@@ -224,7 +224,7 @@ object MotionConfig {
      * returns). Closing: the last of the column drains into the crease at CONTACT_P.
      */
     const val TRAVASO_SEAT_T = 0.7f
-    const val TRAVASO_CONTACT_P = 0.545f
+    const val TRAVASO_CONTACT_P = 0.9f
 
     /**
      * Fanale reversed, as shares of the reveal's time: the closing's contact (p = 0.545) comes at
