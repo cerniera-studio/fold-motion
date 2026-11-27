@@ -713,8 +713,10 @@ class FoldMotionService : Service(), SensorEventListener {
         postureFlat = if (fold == null) null else flat
         // The hinge says which way the crease runs on the screen as it is held now
         if (fold != null) creaseAcross = fold.orientation == androidx.window.layout.FoldingFeature.Orientation.HORIZONTAL
-        // A slow close the effect was waiting on, opened flat again: give the screen back now
-        if (flat && was == false && phase == Phase.PLAYING && awaitingHinge) {
+        // A slow close the effect was waiting on, opened flat again: give the screen back now.
+        // Only when the hinge agrees (27 Nov 2026): mid-fold, One UI can report flat for a moment,
+        // which faded the effect away while the phone was still closing
+        if (flat && was == false && phase == Phase.PLAYING && awaitingHinge && lastAngle >= 150f) {
             awaitingHinge = false
             EventLog.add(this, "Opened flat again during a slow close: screen given back")
             fadeFrom = currentProgress()
