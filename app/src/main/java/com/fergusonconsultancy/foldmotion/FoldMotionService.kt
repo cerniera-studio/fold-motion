@@ -182,6 +182,12 @@ class FoldMotionService : Service(), SensorEventListener {
 
         /** Idle window size in pixels: present, so the app keeps its frame signal, but invisible. */
         private const val IDLE_SIZE = 1
+
+        /** The transitions that carry on onto the cover after a close. */
+        private val COVER_EFFECTS = setOf(
+            MotionConfig.Effect.TRAVASO, MotionConfig.Effect.FANALE,
+            MotionConfig.Effect.FANALE_REVERSE, MotionConfig.Effect.CIRCUITO
+        )
         private const val FRAME_CHECK_MS = 250L
     }
     private var tickDone = false
@@ -230,7 +236,8 @@ class FoldMotionService : Service(), SensorEventListener {
             val now = SystemClock.uptimeMillis()
 
             // Travaso: a close that played on the inner screen carries on onto the cover
-            val pourDue = !inner && MotionConfig.CLOSING_EFFECT == MotionConfig.Effect.TRAVASO &&
+            // Every transition carries on onto the cover (27 Nov 2026), as Travaso does
+            val pourDue = !inner && MotionConfig.CLOSING_EFFECT in COVER_EFFECTS &&
                 (phase == Phase.PLAYING || phase == Phase.HOLDING)
             if (!inner) {
                 // Scatto: a close with no transition (or one cut short before its climax) is still felt
@@ -639,7 +646,7 @@ class FoldMotionService : Service(), SensorEventListener {
             getSystemService(android.app.KeyguardManager::class.java)?.isKeyguardLocked == true
         }.getOrDefault(true)
         if (!isInteractive() || locked) {
-            EventLog.add(this, "Travaso: cover ${if (!isInteractive()) "off" else "locked"}, no pour onto it")
+            EventLog.add(this, "Cover ${if (!isInteractive()) "off" else "locked"}: no arrival onto it")
             finish()
             return
         }
@@ -661,8 +668,9 @@ class FoldMotionService : Service(), SensorEventListener {
         v.mode = FoldOverlayView.Mode.OPEN
         v.setContentSize(size.x, size.y)
         v.show(1f)
-        revealMs = MotionConfig.COVER_POUR_MS * animScale().coerceAtLeast(0.01f)
-        EventLog.add(this, "Travaso: pouring onto the cover from the ${listOf("left", "top", "right", "bottom")[edge]} edge, ${size.x}x${size.y}")
+        val lamp = MotionConfig.CLOSING_EFFECT != MotionConfig.Effect.TRAVASO
+        revealMs = (if (lamp) MotionConfig.COVER_LAMP_MS else MotionConfig.COVER_POUR_MS) * animScale().coerceAtLeast(0.01f)
+        EventLog.add(this, "Cover arrival (${MotionConfig.CLOSING_EFFECT.name.lowercase()}) from the ${listOf("left", "top", "right", "bottom")[edge]} edge, ${size.x}x${size.y}")
         stats.reset()
         panelLit = false
         panelWaitFrom = SystemClock.uptimeMillis()
@@ -971,7 +979,7 @@ class FoldMotionService : Service(), SensorEventListener {
                     // so its state says nothing about the cover glass: wait a fixed settle instead
                     if (waited >= MotionConfig.COVER_SETTLE_MS) {
                         panelLit = true
-                        EventLog.add(this, "Travaso: held ${waited}ms for the cover to light, pour starts")
+                        EventLog.add(this, "Cover held ${waited}ms to light, arrival starts")
                         phaseAt = SystemClock.uptimeMillis()
                     } else {
                         view.show(1f)
@@ -984,7 +992,7 @@ class FoldMotionService : Service(), SensorEventListener {
                 stats.onFrame(frameTimeNanos)
                 if (k >= 1f) {
                     val r = stats.result()
-                    EventLog.add(this, "Travaso: cover pour done" + (r?.let { ", ${it.fps}fps, ${it.dropped} dropped" } ?: ""))
+                    EventLog.add(this, "Cover arrival done" + (r?.let { ", ${it.fps}fps, ${it.dropped} dropped" } ?: ""))
                     finish(); return
                 }
             }

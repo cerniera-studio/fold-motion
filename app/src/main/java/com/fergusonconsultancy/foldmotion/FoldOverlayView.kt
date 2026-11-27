@@ -417,7 +417,11 @@ class FoldOverlayView(context: Context) : View(context) {
 
     private fun drawEffect(canvas: Canvas, w: Float, h: Float) {
         // The pour onto the cover is anchored to the hinge edge itself: never mirrored or turned
-        if (coverPour) { drawTravasoCover(canvas, w, h); return }
+        if (coverPour) {
+            if (MotionConfig.CLOSING_EFFECT == MotionConfig.Effect.TRAVASO) drawTravasoCover(canvas, w, h)
+            else drawLampCover(canvas, w, h)
+            return
+        }
         // Drawn with the leading edge on the right; mirrored so it moves left to right
         val flip = canvas.save()
         if (MotionConfig.LEFT_TO_RIGHT) canvas.scale(-1f, 1f, w / 2f, 0f)
@@ -1919,6 +1923,56 @@ class FoldOverlayView(context: Context) : View(context) {
         val fade = 1f - FoldMath.smooth(FoldMath.clamp((t - seat) / 0.2f))
         if (t >= 0.999f) return
         drawLiquid(canvas, w, h, cx, cy, a, b, n, fade)
+    }
+
+    /**
+     * The lamp transitions on the cover (27 Nov 2026), so every transition carries on across both
+     * screens as Travaso does. The cover is the back of one half, so it has one lamp. Held black
+     * (the closed halves), the light comes back out of the hinge edge where the closing sent it,
+     * runs along the bar into the ring (one head round for Fanale and Fanale reversed, both ways
+     * for Circuito; Fanale keeps its figure-8 joint), the lamp blooms, and the half slides away
+     * from the hinge carrying its lit lamp off the edge, uncovering the cover: the openings' parting.
+     */
+    private fun drawLampCover(canvas: Canvas, w: Float, h: Float) {
+        val c = canvas.save()
+        when (coverHingeEdge) {
+            2 -> { canvas.rotate(180f, w / 2f, h / 2f); drawLampCoverLocal(canvas, w, h) }
+            1 -> { canvas.translate(w, 0f); canvas.rotate(90f); drawLampCoverLocal(canvas, h, w) }
+            3 -> { canvas.translate(0f, h); canvas.rotate(-90f); drawLampCoverLocal(canvas, h, w) }
+            else -> drawLampCoverLocal(canvas, w, h)
+        }
+        canvas.restoreToCount(c)
+    }
+
+    /** Drawn with the hinge on the left edge of a [w] by [h] cover. */
+    private fun drawLampCoverLocal(canvas: Canvas, w: Float, h: Float) {
+        val t = FoldMath.unglide(1f - p)
+        val effect = MotionConfig.CLOSING_EFFECT
+        val l = rosso
+        // Laid out as the right half of a screen twice the cover's width, shifted left by one
+        // cover: its bar then runs to the hinge edge, its ring sits out on the cover
+        l.layout(w * 2f, h, turned = effect == MotionConfig.Effect.FANALE)
+        l.fillAll(0f)
+        l.barRun(1, t, 0.06f, 0.26f, fromTip = true)
+        if (effect == MotionConfig.Effect.CIRCUITO) l.ringBothWays(1, t, 0.27f, 0.58f, l.attach(1))
+        else l.sweepRing(1, t, 0.27f, 0.6f, l.attach(1), if (effect == MotionConfig.Effect.FANALE) -1 else 1)
+        val bloom = FoldMath.smooth(FoldMath.clamp((t - 0.6f) / 0.05f)) * (1f - FoldMath.smooth(FoldMath.clamp((t - 0.66f) / 0.2f)))
+        if (bloom > 0f) l.scale(1f + 0.28f * bloom * density)
+        // The half slides away from the hinge, its lamp riding it
+        val part = FoldMath.magnetOut(FoldMath.clamp((t - 0.64f) / 0.36f))
+        val edge = w * part
+        val offset = -w + edge
+        blackPaint.alpha = 255
+        if (edge < w) canvas.drawRect(edge, 0f, w + 1f, h, blackPaint)
+        // The light coming back out of the hinge
+        if (t < 0.1f) {
+            val k = FoldMath.smooth(FoldMath.clamp(t / 0.04f)) * (1f - FoldMath.smooth(FoldMath.clamp((t - 0.06f) / 0.04f)))
+            val tip = l.tipX(1, offset)
+            l.glow(canvas, tip, l.barLine, w * 0.05f, w * 0.05f, 0.55f * k)
+            l.coreDot(canvas, tip, l.barLine, l.ringRadius * 0.08f, 0.95f * k)
+        }
+        l.draw(canvas, 1, offset)
+        if (bloom > 0.004f) l.glow(canvas, w * 0.7f + edge, h * 0.5f, l.ringRadius * 2.4f, l.ringRadius * 2.4f, 0.24f * bloom)
     }
 
     /** After a close: the liquid pours onto the cover from its hinge edge. */

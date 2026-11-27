@@ -338,6 +338,9 @@ object MotionConfig {
     /** Travaso: how long the pour onto the cover takes, at the designed speed. */
     const val COVER_POUR_MS = 700L
 
+    /** The lamp transitions' arrival on the cover: the light, the bloom, then the half parting. */
+    const val COVER_LAMP_MS = 950L
+
     /**
      * Travaso: the pour onto the cover holds black this long after the switch, for the cover
      * glass to light (27 Nov 2026: both panels are one display, already reported on from the
