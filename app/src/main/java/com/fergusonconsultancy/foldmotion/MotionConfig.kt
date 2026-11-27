@@ -291,11 +291,13 @@ object MotionConfig {
     const val HOLD_TIMEOUT_MS = 600L
 
     /**
-     * A slow close waits for the hinge to report shut; past this many ms into the effect (at
+     * A slow close waits for the hinge to report shut (or for One UI to switch to the cover: on
+     * the Fold 8 the hinge often reports nothing mid-close and only 180 to 0 after the switch).
+     * Opening flat again gives the screen straight back; past this many ms into the effect (at
      * the designed speed) the phone is taken to be held part-folded and the screen is given back.
      * Kept under WATCHDOG_MS.
      */
-    const val SLOW_CLOSE_WAIT_MS = 2600L
+    const val SLOW_CLOSE_WAIT_MS = 6000L
     const val FADE_MS = 200L
 
     /**
@@ -337,7 +339,7 @@ object MotionConfig {
     const val LEFT_TO_RIGHT = true
 
     /** Anything still playing after this long is stuck and gets reset. */
-    const val WATCHDOG_MS = 3000L
+    const val WATCHDOG_MS = 7000L
 
     /** Android's standard hinge sensor reports 90 degree steps; ignore jitter below this. */
     const val MOVE_THRESHOLD_DEG = 1.5f

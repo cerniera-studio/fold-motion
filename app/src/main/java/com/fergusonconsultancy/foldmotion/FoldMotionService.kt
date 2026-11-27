@@ -664,6 +664,14 @@ class FoldMotionService : Service(), SensorEventListener {
         postureFlat = if (fold == null) null else flat
         // The hinge says which way the crease runs on the screen as it is held now
         if (fold != null) creaseAcross = fold.orientation == androidx.window.layout.FoldingFeature.Orientation.HORIZONTAL
+        // A slow close the effect was waiting on, opened flat again: give the screen back now
+        if (flat && was == false && phase == Phase.PLAYING && awaitingHinge) {
+            awaitingHinge = false
+            EventLog.add(this, "Opened flat again during a slow close: screen given back")
+            fadeFrom = currentProgress()
+            enter(Phase.FADING)
+            return
+        }
         if (was != true || !half) return
         val now = SystemClock.uptimeMillis()
         val scale = animScale()
@@ -783,7 +791,7 @@ class FoldMotionService : Service(), SensorEventListener {
                     EventLog.add(this, "Slower close than usual: waiting for the hinge (${lastAngle.roundToInt()}°)")
                 }
                 // Held part-folded rather than closing: give the screen back
-                if (awaitingHinge && t > kotlin.math.min(MotionConfig.SLOW_CLOSE_WAIT_MS * scale, MotionConfig.WATCHDOG_MS - 200f)) {
+                if (awaitingHinge && t > kotlin.math.min(MotionConfig.SLOW_CLOSE_WAIT_MS * scale, MotionConfig.WATCHDOG_MS - 500f)) {
                     awaitingHinge = false
                     EventLog.add(this, "No hinge report after ${t.roundToInt()}ms: phone held part-folded, screen given back")
                     fadeFrom = planP(t)
