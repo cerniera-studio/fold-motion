@@ -44,7 +44,7 @@ class Haptics(private val context: Context) {
         CORONA("a watch crown: crisp detents"),
         CAVEAU("a vault door: a heavy landing, then the bolts"),
         SCRIGNO("a jewel case: a magnetic snap, a bright spring"),
-        CATENARIA("a chain: the links running, then pulled taut"),
+        TRAVASO("a liquid: a swell, then seating"),
     }
 
     enum class Character(val label: String, val note: String, val voice: Voice) {
@@ -111,7 +111,7 @@ class Haptics(private val context: Context) {
                 Voice.CAVEAU -> listOf(Step(SLOW_RISE, 0.45f + 0.3f * slowness))
                 // The lid tipping over; the rim lighting at the edges
                 Voice.SCRIGNO -> listOf(Step(TICK, 0.25f))
-                Voice.CATENARIA -> listOf(Step(TICK, 0.2f))
+                Voice.TRAVASO -> listOf(Step(TICK, 0.2f))
             }, v
         )
     }
@@ -136,7 +136,7 @@ class Haptics(private val context: Context) {
             Voice.CAVEAU -> if (slowness < FAST) listOf(Step(LOW, 0.6f)) else listOf(Step(LOW, 0.5f), Step(LOW, 0.5f, 45))
             Voice.SCRIGNO -> if (slowness >= FAST) listOf(Step(TICK, 0.25f)) else emptyList()
             // A seam of light gives
-            Voice.CATENARIA -> if (slowness >= FAST) listOf(Step(LOW, 0.3f)) else emptyList()
+            Voice.TRAVASO -> if (slowness >= FAST) listOf(Step(LOW, 0.3f)) else emptyList()
         }
         compose(steps, v)
     }
@@ -171,8 +171,8 @@ class Haptics(private val context: Context) {
         Voice.CAVEAU -> listOf(Step(QUICK_FALL, 0.55f + 0.2f * slowness), Step(LOW, 0.3f, 30))
         // The lid's spring: a bright snap and a small ring after it
         Voice.SCRIGNO -> listOf(Step(CLICK, 0.7f), Step(TICK, 0.35f, 60))
-        // The chain running out, then pulled taut
-        Voice.CATENARIA -> if (slowness < FAST) listOf(Step(QUICK_RISE, 0.4f), Step(CLICK, 0.8f))
+        // The liquid surging out, then seating into the corners
+        Voice.TRAVASO -> if (slowness < FAST) listOf(Step(QUICK_RISE, 0.4f), Step(CLICK, 0.8f))
             else listOf(Step(QUICK_RISE, 0.5f), Step(CLICK, 0.7f))
     }
 
@@ -195,8 +195,8 @@ class Haptics(private val context: Context) {
             s < FAST -> listOf(Step(QUICK_RISE, 0.5f), Step(CLICK, 0.9f))
             else -> listOf(Step(QUICK_RISE, 0.4f + 0.2f * s), Step(CLICK, 0.8f), Step(LOW, 0.3f, 30))
         }
-        // The chain sagging in as the halves close, then the halves meeting: nothing after
-        Voice.CATENARIA -> when {
+        // The liquid draining into the crease, then the last of it gone: nothing after
+        Voice.TRAVASO -> when {
             s < FAST -> listOf(Step(QUICK_RISE, 0.45f), Step(CLICK, 1f))
             else -> listOf(Step(QUICK_RISE, 0.35f + 0.25f * s), Step(CLICK, 0.85f))
         }
@@ -421,7 +421,7 @@ class Haptics(private val context: Context) {
 
         /** Each style's own voice: what its light does, felt and heard. */
         fun voiceFor(e: MotionConfig.Effect): Voice = when (e) {
-            MotionConfig.Effect.CATENARIA -> Voice.CATENARIA          // a chain running out, pulled taut
+            MotionConfig.Effect.TRAVASO -> Voice.TRAVASO          // a liquid swelling, then seating
             MotionConfig.Effect.CIRCUITO -> Voice.CORONA            // light running the rings, meeting: detents
             MotionConfig.Effect.FANALE_REVERSE -> Voice.SCRIGNO     // light springing out from the hinge
             else -> Voice.PORTIERA                                  // Fanale: the car's lamps, the car's door

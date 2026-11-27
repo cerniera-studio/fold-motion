@@ -46,7 +46,7 @@ import kotlin.math.roundToInt
  */
 class FoldMotionService : Service(), SensorEventListener {
 
-    private enum class Phase { IDLE, PLAYING, HOLDING, FADING, ARMED, WAITING_PANEL, AWAIT_UNLOCK, REVEALING }
+    private enum class Phase { IDLE, PLAYING, HOLDING, FADING, ARMED, WAITING_PANEL, AWAIT_UNLOCK, REVEALING, COVER_POUR }
 
     private lateinit var sensorManager: SensorManager
     private var hingeSensor: Sensor? = null
@@ -223,6 +223,9 @@ class FoldMotionService : Service(), SensorEventListener {
             currentInner = inner
             val now = SystemClock.uptimeMillis()
 
+            // Travaso: a close that played on the inner screen carries on onto the cover
+            val pourDue = !inner && MotionConfig.CLOSING_EFFECT == MotionConfig.Effect.TRAVASO &&
+                (phase == Phase.PLAYING || phase == Phase.HOLDING)
             if (!inner) {
                 // Scatto: a close with no transition (or one cut short before its climax) is still felt
                 if (!closeFelt && isInteractive()) {
@@ -265,6 +268,7 @@ class FoldMotionService : Service(), SensorEventListener {
                 startReveal()
                 return
             }
+            if (pourDue) { startCoverPour(); return }
             // Otherwise the arriving screen is always clean
             finish()
         }
@@ -608,7 +612,46 @@ class FoldMotionService : Service(), SensorEventListener {
         }
     }
 
+    /**
+     * Travaso's second vessel (27 Nov 2026): once a close has switched to the cover, the liquid
+     * pours onto it from the hinge edge. Only when the cover lights unlocked (an app continued
+     * on the cover): the lock screen sits above every app overlay, so a pour there would be hidden.
+     */
+    private fun startCoverPour() {
+        val locked = runCatching {
+            getSystemService(android.app.KeyguardManager::class.java)?.isKeyguardLocked == true
+        }.getOrDefault(true)
+        if (!isInteractive() || locked) {
+            EventLog.add(this, "Travaso: cover ${if (!isInteractive()) "off" else "locked"}, no pour onto it")
+            finish()
+            return
+        }
+        val display = getSystemService(android.hardware.display.DisplayManager::class.java)
+            .getDisplay(android.view.Display.DEFAULT_DISPLAY)
+        @Suppress("DEPRECATION")
+        val size = android.graphics.Point().also { display.getRealSize(it) }
+        // Closed like a book, the spine is on the cover's left; turned, it moves with the turn
+        val edge = when (display.rotation) {
+            android.view.Surface.ROTATION_90 -> 3
+            android.view.Surface.ROTATION_180 -> 2
+            android.view.Surface.ROTATION_270 -> 1
+            else -> 0
+        }
+        val v = overlay ?: run { finish(); return }
+        v.creaseAcross = false
+        v.coverHingeEdge = edge
+        v.coverPour = true
+        v.mode = FoldOverlayView.Mode.OPEN
+        v.setContentSize(size.x, size.y)
+        v.show(1f)
+        revealMs = MotionConfig.COVER_POUR_MS * animScale().coerceAtLeast(0.01f)
+        EventLog.add(this, "Travaso: pouring onto the cover from the ${listOf("left", "top", "right", "bottom")[edge]} edge, ${size.x}x${size.y}")
+        stats.reset()
+        enter(Phase.COVER_POUR)
+    }
+
     private fun startClose(now: Long, scale: Float) {
+        MotionConfig.resolveRim(this)
         overlay?.mode = FoldOverlayView.Mode.CLOSE
         overlay?.creaseAcross = creaseRunsAcross()
         java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY).let { hr -> overlay?.setLight(hr, Ambient.darkness(this, hr)) }
@@ -689,6 +732,7 @@ class FoldMotionService : Service(), SensorEventListener {
     }
 
     private fun startReveal(afterUnlock: Boolean = false) {
+        MotionConfig.resolveRim(this)
         mainHandler.removeCallbacks(armDeadline)
         java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY).let { hr -> overlay?.setLight(hr, Ambient.darkness(this, hr)) }
         // The lock screen sits above every app overlay, so a reveal played now would be
@@ -807,7 +851,7 @@ class FoldMotionService : Service(), SensorEventListener {
                 if (!tickDone && p >= MotionConfig.TICK_AT) { tickDone = true; if (!closeFelt) haptics.tick(closeSlowness) }
                 val clickP = when (MotionConfig.CLOSING_EFFECT) {
                     MotionConfig.Effect.FANALE, MotionConfig.Effect.CIRCUITO, MotionConfig.Effect.FANALE_REVERSE, MotionConfig.Effect.LAMP_GLASS -> MotionConfig.FANALE_CONTACT_P
-                    MotionConfig.Effect.CATENARIA -> MotionConfig.CATENARIA_CONTACT_P
+                    MotionConfig.Effect.TRAVASO -> MotionConfig.TRAVASO_CONTACT_P
                     else -> MotionConfig.CLICK_AT
                 }
                 // Started closeLead ms early, so a sequence's climax (not its first hit) lands on contact;
@@ -860,7 +904,7 @@ class FoldMotionService : Service(), SensorEventListener {
                     MotionConfig.Effect.SIGNATURE -> MotionConfig.SIGNATURE_BREAK_T
                     MotionConfig.Effect.FRAME_OF_LIGHT, MotionConfig.Effect.LIT_GLASS, MotionConfig.Effect.LAMP_GLASS -> MotionConfig.FRAME_SEAT_T
                     MotionConfig.Effect.FANALE -> MotionConfig.FANALE_LIGHTS_T
-                    MotionConfig.Effect.CATENARIA -> MotionConfig.CATENARIA_TAUT_T
+                    MotionConfig.Effect.TRAVASO -> MotionConfig.TRAVASO_SEAT_T
                     MotionConfig.Effect.FANALE_REVERSE -> MotionConfig.FANALE_REVERSE_CLICK_T
                     MotionConfig.Effect.CIRCUITO -> MotionConfig.CIRCUITO_MEET_T
                     else -> 2f
@@ -870,14 +914,14 @@ class FoldMotionService : Service(), SensorEventListener {
                 val touchAt = when (opening) {
                     MotionConfig.Effect.FRAME_OF_LIGHT, MotionConfig.Effect.LIT_GLASS, MotionConfig.Effect.LAMP_GLASS -> MotionConfig.FRAME_SEAT_T
                     MotionConfig.Effect.FANALE -> MotionConfig.FANALE_TOUCH_T
-                    MotionConfig.Effect.CATENARIA -> MotionConfig.CATENARIA_TAUT_T
+                    MotionConfig.Effect.TRAVASO -> MotionConfig.TRAVASO_SEAT_T
                     MotionConfig.Effect.FANALE_REVERSE -> MotionConfig.FANALE_REVERSE_TOUCH_T
                     MotionConfig.Effect.CIRCUITO -> MotionConfig.CIRCUITO_TOUCH_T
                     else -> 2f
                 }
                 // k is real time: the effects draw on unglide(glide(k)), which is k
                 // Started releaseLead ms early so the climax lands on the light's; nothing may follow it
-                // once touch is back (Catenaria: touch returns on the climax, so nothing follows at all)
+                // once touch is back (Travaso: touch returns on the climax, so nothing follows at all)
                 if (!releaseDone && (elapsed() + releaseLead) / revealMs >= clickAt) {
                     releaseDone = true
                     haptics.release(openSlowness, ((touchAt - clickAt) * revealMs).roundToInt().coerceAtLeast(0))
@@ -890,6 +934,16 @@ class FoldMotionService : Service(), SensorEventListener {
                         "Reveal done: drew ${view.drawCount} of ${r?.frames ?: 0} frames" +
                             (r?.let { ", ${it.fps}fps, ${it.dropped} dropped" } ?: "")
                     )
+                    finish(); return
+                }
+            }
+            Phase.COVER_POUR -> {
+                val k = FoldMath.clamp(t / revealMs)
+                view.show(1f - FoldMath.glide(k))
+                stats.onFrame(frameTimeNanos)
+                if (k >= 1f) {
+                    val r = stats.result()
+                    EventLog.add(this, "Travaso: cover pour done" + (r?.let { ", ${it.fps}fps, ${it.dropped} dropped" } ?: ""))
                     finish(); return
                 }
             }
@@ -911,6 +965,7 @@ class FoldMotionService : Service(), SensorEventListener {
         mainHandler.removeCallbacks(revealDeadline)
         mainHandler.removeCallbacks(armDeadline)
         mainHandler.removeCallbacks(unlockDeadline)
+        overlay?.coverPour = false
         overlay?.clearAll()
         setActiveWindow(false)
     }

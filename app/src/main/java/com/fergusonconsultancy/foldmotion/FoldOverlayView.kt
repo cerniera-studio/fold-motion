@@ -16,11 +16,6 @@ import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
 
-/** Catenaria: how many links the chain is drawn with. */
-private const val CAT_LINKS = 40
-
-/** Catenaria's spill of light onto the screen beneath the chain: (stroke width as a share of the screen, strength). */
-private val CAT_SPILL = arrayOf(0.11f to 0.06f, 0.06f to 0.09f, 0.03f to 0.14f)
 
 /**
  * Two effects in Visconti green, both one continuous motion, built in layers
@@ -421,6 +416,8 @@ class FoldOverlayView(context: Context) : View(context) {
     var creaseAcross = false
 
     private fun drawEffect(canvas: Canvas, w: Float, h: Float) {
+        // The pour onto the cover is anchored to the hinge edge itself: never mirrored or turned
+        if (coverPour) { drawTravasoCover(canvas, w, h); return }
         // Drawn with the leading edge on the right; mirrored so it moves left to right
         val flip = canvas.save()
         if (MotionConfig.LEFT_TO_RIGHT) canvas.scale(-1f, 1f, w / 2f, 0f)
@@ -459,10 +456,10 @@ class FoldOverlayView(context: Context) : View(context) {
                 if (mode == Mode.CLOSE) drawCircuitoClose(canvas, w, h) else drawCircuitoOpen(canvas, w, h)
                 canvas.restoreToCount(c)
             }
-            MotionConfig.Effect.CATENARIA -> {
+            MotionConfig.Effect.TRAVASO -> {
                 val c = canvas.save()
                 if (MotionConfig.LEFT_TO_RIGHT) canvas.scale(-1f, 1f, w / 2f, 0f)
-                if (mode == Mode.CLOSE) drawCatenariaClose(canvas, w, h) else drawCatenaria(canvas, w, h)
+                if (mode == Mode.CLOSE) drawTravasoClose(canvas, w, h) else drawTravaso(canvas, w, h)
                 canvas.restoreToCount(c)
             }
         }
@@ -1798,204 +1795,154 @@ class FoldOverlayView(context: Context) : View(context) {
 
     // endregion
 
-    // region Catenaria (26 Nov 2026): Gaudí's hanging chain, replacing Membrana
+    // region Travaso (27 Nov 2026): the screen as a liquid, poured between two vessels
 
     /*
-     * Gaudí found his arches by hanging chains and letting gravity draw the curve; the Bauhaus
-     * asks that nothing be there without a force behind it. Here the force is the fold itself:
-     * a chain of light of fixed length is held at the parting halves' top inner corners. Closed,
-     * the corners meet on the crease and the chain hangs straight down it (straight for the
-     * machine). As the halves part, its ends are carried apart and it takes the one shape physics
-     * allows, the catenary, swinging open and rising as the span grows (curved for the living).
-     * Your screen shows beneath the chain, between the halves; above it the dark is held up by
-     * the chain like cloth. Pulled almost taut it gives a small soft lift and leaves through the
-     * top edge: the climax, the click, touch returns. Closing is the same gesture run back.
+     * Travaso is pouring from one vessel into another. The two screens are the vessels and the
+     * hinge is the neck: your screen is the liquid. Opening, it pours out of the crease as a
+     * column, surging up and down the hinge first, then spreads sideways a beat behind; its
+     * shape relaxes from round into the screen's own rounded corners as it seats (the climax,
+     * the click, touch returns). Closing is the same run back: sides first, then the column,
+     * into the crease. Once shut, the same liquid pours onto the cover from its hinge edge.
+     *
+     * The shape is a superellipse about the crease, |x/a|^n + |y/b|^n = 1: n = 2 is a drop,
+     * a large n the screen's own rectangle. Content is never painted over: outside the liquid
+     * is black, inside is your screen. The only light is the meniscus on its edge, one warm
+     * band with one highlight catching from the upper left, and a little warmth just inside it.
+     * On Android 13 and later it is one AGSL shader on the GPU, at the screen's full rate.
      */
 
-    private val catPath = Path()
-    private val catPts = FloatArray(2 * (CAT_LINKS + 1))
-    private val catGlow = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND; strokeJoin = Paint.Join.ROUND }
-    private val catCore = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND; strokeJoin = Paint.Join.ROUND }
-    private val catLink = Paint(Paint.ANTI_ALIAS_FLAG)
-    private val catWin = Path()
-    private val catSpill = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeCap = Paint.Cap.ROUND; strokeJoin = Paint.Join.ROUND }
-    private val catDrape = Paint(Paint.ANTI_ALIAS_FLAG)
-    private var catDrapeRim: MotionConfig.Rim? = null
-
-    /** The drape's sheen: black up top, warming to a deep tone of the chain's light at its edge. Built once per colour. */
-    private fun drapeShader(rim: MotionConfig.Rim): Shader {
-        if (catDrapeRim != rim || catDrape.shader == null) {
-            val deep = Color.argb(255, Color.red(rim.glow) / 5, Color.green(rim.glow) / 5, Color.blue(rim.glow) / 5)
-            catDrape.shader = LinearGradient(0f, 0f, 0f, 1f, intArrayOf(Color.BLACK, Color.BLACK, deep),
-                floatArrayOf(0f, 0.55f, 1f), Shader.TileMode.CLAMP)
-            catDrapeRim = rim
+    private val travasoAgsl = """
+        uniform float2 c;
+        uniform float2 ab;
+        uniform float n;
+        uniform float band;
+        uniform float fade;
+        layout(color) uniform half4 glow;
+        layout(color) uniform half4 core;
+        half4 main(float2 p) {
+            float2 d = abs(p - c) / ab;
+            float r = pow(pow(d.x, n) + pow(d.y, n), 1.0 / n);
+            float e = band / min(ab.x, ab.y);
+            float inside = 1.0 - smoothstep(1.0 - e * 0.35, 1.0 + e * 0.35, r);
+            float rim = exp(-pow((r - 1.0) / e, 2.0)) * fade;
+            float lit = clamp(0.55 - (p.y - c.y) / ab.y * 0.5 - (p.x - c.x) / ab.x * 0.2, 0.0, 1.0);
+            float spec = exp(-pow((r - 1.0) / (e * 0.4), 2.0)) * lit * fade;
+            float wash = clamp((r - (1.0 - e * 5.0)) / (e * 5.0), 0.0, 1.0) * inside * fade * 0.22;
+            float a = clamp((1.0 - inside) + rim * 0.6 + wash + spec * 0.85, 0.0, 1.0);
+            half3 col = glow.rgb * half(rim * 0.6 + wash) + core.rgb * half(spec * 0.85);
+            return half4(min(col, half3(a)), half(a));
         }
-        return catDrape.shader
+    """.trimIndent()
+
+    private val travasoShader: Any? = if (android.os.Build.VERSION.SDK_INT >= 33)
+        runCatching { android.graphics.RuntimeShader(travasoAgsl) }.getOrNull() else null
+    private val travasoPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private val travasoPath = Path()
+    private val travasoStroke = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeJoin = Paint.Join.ROUND }
+
+    /** Set by the service for the pour onto the cover after a close: anchored at the hinge edge. */
+    var coverPour = false
+
+    /** Which edge of the cover the hinge is on: 0 left, 1 top, 2 right, 3 bottom. */
+    var coverHingeEdge = 0
+
+    /** A liquid swell: rises past its level once and settles, reaching exactly 1 at x = 1. */
+    private fun swell(x: Float): Float {
+        val k = FoldMath.clamp(x)
+        if (k >= 1f) return 1f
+        return 1f - kotlin.math.exp(-5f * k) * kotlin.math.cos(7.5f * k) * kotlin.math.sqrt(1f - k)
     }
 
-    /**
-     * The catenary's parameter a for anchors [span] apart on a chain of [length]: solves
-     * 2a sinh(span / 2a) = length, by bisection on b = span / 2a (sinh(b) / b = length / span).
-     * Returns 0 when the chain is all but taut.
-     */
-    private fun catenaryA(span: Float, length: Float): Float {
-        val ratio = length / span
-        if (ratio <= 1.00005f) return 0f
-        var lo = 1e-4; var hi = 30.0
-        repeat(40) {
-            val mid = (lo + hi) / 2
-            if (kotlin.math.sinh(mid) / mid < ratio) lo = mid else hi = mid
+    /** Draws the liquid centred on (cx, cy) with half-extents a, b and squareness n. */
+    private fun drawLiquid(canvas: Canvas, w: Float, h: Float, cx: Float, cy: Float, a: Float, b: Float, n: Float, fade: Float) {
+        val aa = max(a, 2f); val bb = max(b, 2f)
+        val band = max(3f, min(w, h) * 0.009f)
+        val glow = MotionConfig.RIM_GLOW; val core = MotionConfig.RIM_CORE
+        val f = fade * brightness
+        val rs = travasoShader
+        if (android.os.Build.VERSION.SDK_INT >= 33 && rs is android.graphics.RuntimeShader) {
+            rs.setFloatUniform("c", cx, cy)
+            rs.setFloatUniform("ab", aa, bb)
+            rs.setFloatUniform("n", n)
+            rs.setFloatUniform("band", band)
+            rs.setFloatUniform("fade", f)
+            rs.setColorUniform("glow", glow)
+            rs.setColorUniform("core", core)
+            travasoPaint.shader = rs
+            canvas.drawRect(0f, 0f, w + 1f, h + 1f, travasoPaint)
+            return
         }
-        return (span / (2.0 * (lo + hi) / 2)).toFloat()
-    }
-
-    /**
-     * Fills [catPts] with CAT_LINKS + 1 points at equal spacing along the chain, hung from
-     * (xl, ay) and (xr, ay), with its sag scaled by [give] (1 is the true catenary; a touch
-     * under 1 is the soft lift as it goes taut). Returns the sag at the middle.
-     */
-    private fun layChain(xl: Float, xr: Float, ay: Float, length: Float, give: Float): Float {
-        val span = xr - xl
-        val cx = (xl + xr) / 2f
-        if (span < 1f) {
-            // The ends together on the crease: the chain hangs straight down it, doubled
-            for (i in 0..CAT_LINKS) {
-                val k = 1f - abs(2f * i / CAT_LINKS - 1f)
-                catPts[2 * i] = cx; catPts[2 * i + 1] = ay + length / 2f * k * give
-            }
-            return length / 2f * give
+        // Before Android 13: the same shape as a path, black outside, a stroked meniscus
+        travasoPath.reset()
+        travasoPath.addRect(-1f, -1f, w + 1f, h + 1f, Path.Direction.CW)
+        val steps = 96
+        for (i in 0..steps) {
+            val th = (2.0 * Math.PI * i / steps)
+            val ct = kotlin.math.cos(th); val st = kotlin.math.sin(th)
+            val x = cx + aa * Math.signum(ct).toFloat() * Math.pow(abs(ct), 2.0 / n).toFloat()
+            val y = cy + bb * Math.signum(st).toFloat() * Math.pow(abs(st), 2.0 / n).toFloat()
+            if (i == 0) travasoPath.moveTo(x, y) else travasoPath.lineTo(x, y)
         }
-        val a = catenaryA(span, length)
-        if (a <= 0f) {
-            for (i in 0..CAT_LINKS) { catPts[2 * i] = xl + span * i / CAT_LINKS; catPts[2 * i + 1] = ay }
-            return 0f
-        }
-        val half = span / 2f
-        val sag = a * kotlin.math.cosh(half / a) - a
-        val arcHalf = a * kotlin.math.sinh(half / a)
-        for (i in 0..CAT_LINKS) {
-            val sgm = -arcHalf + 2f * arcHalf * i / CAT_LINKS
-            val x = a * kotlin.math.asinh(sgm / a)
-            val y = sag - (a * kotlin.math.cosh(x / a) - a)
-            catPts[2 * i] = cx + x; catPts[2 * i + 1] = ay + y * give
-        }
-        return sag * give
-    }
-
-    private fun drawCatenaria(canvas: Canvas, w: Float, h: Float) {
-        val t = FoldMath.unglide(1f - p)
-        val cx = w / 2f
-        val taut = MotionConfig.CATENARIA_TAUT_T
-        // The halves part on the magnetic curves and are fully apart as the chain goes taut
-        val part = FoldMath.magnetOut(FoldMath.clamp((t - 0.06f) / (taut - 0.06f)))
-        val xl = cx - cx * part
-        val xr = cx + cx * part
-        // Its length: just more than the screen is wide, so it is nearly taut at full span, and
-        // closed it hangs halfway down the crease
-        val length = w * 1.006f
-        // As it goes taut the anchors lift a little past the top edge, taking the chain off screen
-        val lift = FoldMath.smooth(FoldMath.clamp((t - (taut - 0.1f)) / 0.18f))
-        val ay = -w * 0.07f * lift
-        // Soft material may overshoot: a small lift as it is pulled taut, settling back
-        val u = FoldMath.clamp((t - (taut - 0.06f)) / 0.16f)
-        val give = 1f - 0.55f * kotlin.math.sin(Math.PI.toFloat() * u) * (1f - u)
-        val sag = layChain(xl, xr, ay, length, give)
-
-        // The dark: everywhere except between the halves, beneath the chain
+        travasoPath.close()
+        travasoPath.fillType = Path.FillType.EVEN_ODD
         blackPaint.alpha = 255
-        if (xr - xl < 0.5f) {
-            canvas.drawRect(0f, 0f, w + 1f, h, blackPaint)
-        } else {
-            catPath.reset()
-            catPath.addRect(0f, 0f, w + 1f, h, Path.Direction.CW)
-            catPath.moveTo(catPts[0], catPts[1])
-            for (i in 1..CAT_LINKS) catPath.lineTo(catPts[2 * i], catPts[2 * i + 1])
-            catPath.lineTo(xr, h + 1f)
-            catPath.lineTo(xl, h + 1f)
-            catPath.close()
-            catPath.fillType = Path.FillType.EVEN_ODD
-            canvas.drawPath(catPath, blackPaint)
-        }
+        canvas.drawPath(travasoPath, blackPaint)
+        travasoStroke.color = glow
+        travasoStroke.strokeWidth = band * 1.6f
+        travasoStroke.alpha = (255 * min(1f, 0.6f * f)).toInt()
+        canvas.drawPath(travasoPath, travasoStroke)
+        travasoStroke.color = core
+        travasoStroke.strokeWidth = band * 0.35f
+        travasoStroke.alpha = (255 * min(1f, 0.7f * f)).toInt()
+        canvas.drawPath(travasoPath, travasoStroke)
+    }
 
-        // The chain's light: there from the first frame, gone once it has left the screen
-        val on = (1f - FoldMath.smooth(FoldMath.clamp((t - taut) / 0.12f))) * brightness
-        if (on <= 0.004f) return
-        val rim = MotionConfig.RIM
-        catPath.reset()
-        catPath.moveTo(catPts[0], catPts[1])
-        for (i in 1..CAT_LINKS) catPath.lineTo(catPts[2 * i], catPts[2 * i + 1])
-        val open = xr - xl >= 0.5f
+    /** Opening, and closing run back: the pour out of the crease. */
+    private fun drawTravaso(canvas: Canvas, w: Float, h: Float) {
+        val t = FoldMath.unglide(1f - p)
+        val seat = MotionConfig.TRAVASO_SEAT_T
+        val cx = w / 2f; val cy = h / 2f
+        // Visible from the first frame: a thin line of liquid on the crease
+        val col = swell(t / (seat * 0.72f))
+        val side = swell(FoldMath.clamp((t - 0.1f) / (seat - 0.1f)))
+        // Seated: the liquid fills the glass; after it, it carries on just past the edges and its light fades
+        val past = FoldMath.smooth(FoldMath.clamp((t - seat) / (1f - seat)))
+        val bFull = h * 0.5f * 1.035f
+        val aFull = w * 0.5f * 1.035f
+        val b = h * 0.05f + (bFull - h * 0.05f) * col + h * 0.08f * past
+        val a = w * 0.004f + (aFull - w * 0.004f) * side + w * 0.08f * past
+        val n = 2f + 9f * FoldMath.smooth(FoldMath.clamp((t - 0.12f) / (seat - 0.12f)))
+        val fade = 1f - FoldMath.smooth(FoldMath.clamp((t - seat) / 0.2f))
+        if (t >= 0.999f) return
+        drawLiquid(canvas, w, h, cx, cy, a, b, n, fade)
+    }
 
-        if (open) {
-            // The window beneath the chain, for the drape and the spill
-            catWin.reset()
-            catWin.moveTo(catPts[0], catPts[1])
-            for (i in 1..CAT_LINKS) catWin.lineTo(catPts[2 * i], catPts[2 * i + 1])
-            catWin.lineTo(xr, h + 1f); catWin.lineTo(xl, h + 1f); catWin.close()
-
-            // The drape: the dark the chain holds up is heavy cloth, its sheen warming towards
-            // the lit edge it hangs from
-            val low = ay + sag
-            if (low > 1f) {
-                canvas.save()
-                canvas.clipOutPath(catWin)
-                m.setScale(1f, low + w * 0.01f); m.postTranslate(0f, 0f)
-                drapeShader(rim).setLocalMatrix(m)
-                catDrape.alpha = (255 * on.coerceAtMost(1f)).toInt()
-                canvas.drawRect(xl, 0f, xr, low + w * 0.01f, catDrape)
-                canvas.restore()
-            }
-
-            // The spill: warm light falling from the chain onto the screen beneath it, deepest
-            // under the lowest point, a few soft layers rather than a blur
-            canvas.save()
-            canvas.clipPath(catWin)
-            catSpill.color = rim.glow
-            for ((wid, al) in CAT_SPILL) {
-                catSpill.strokeWidth = w * wid
-                catSpill.alpha = (255 * min(1f, al * on * (0.5f + 0.5f * density))).toInt()
-                canvas.drawPath(catPath, catSpill)
-            }
-            canvas.restore()
-        }
-
-        // The chain itself: a warm glow, then a firm core
-        catGlow.color = rim.glow
-        catGlow.strokeWidth = w * 0.02f
-        catGlow.alpha = (255 * min(1f, 0.42f * on)).toInt()
-        canvas.drawPath(catPath, catGlow)
-        catCore.color = rim.glow
-        catCore.strokeWidth = max(2f, w * 0.0042f)
-        catCore.alpha = (255 * min(1f, 0.95f * on)).toInt()
-        canvas.drawPath(catPath, catCore)
-
-        // The links: lit pearls, heaviest at the lowest point and lit from the upper left. As it
-        // is pulled taut, one highlight runs from the middle out to both anchors: the tension
-        // arriving, the only bright thing on the screen at that moment
-        val wave = FoldMath.clamp((t - (taut - 0.05f)) / 0.13f)
-        val waving = wave > 0f && wave < 1f
-        for (i in 0..CAT_LINKS) {
-            val x = catPts[2 * i]; val y = catPts[2 * i + 1]
-            val k = kotlin.math.sin(Math.PI.toFloat() * i / CAT_LINKS)
-            var lit = 0.35f + 0.65f * k * k
-            if (waving) {
-                val d = abs(2f * i / CAT_LINKS - 1f) - wave
-                lit += 1.1f * kotlin.math.exp(-(d * d) / 0.006f) * (1f - 0.5f * wave)
-            }
-            val r = w * (0.0040f + 0.0035f * k)
-            catLink.color = rim.glow
-            catLink.alpha = (255 * min(1f, 0.16f * lit * on)).toInt()
-            canvas.drawCircle(x, y, r * 2.3f, catLink)
-            catLink.alpha = (255 * min(1f, (0.55f + 0.45f * lit) * on)).toInt()
-            canvas.drawCircle(x, y, r, catLink)
-            catLink.color = rim.core
-            catLink.alpha = (255 * min(1f, 0.9f * lit * on)).toInt()
-            canvas.drawCircle(x - r * 0.3f, y - r * 0.3f, r * 0.45f, catLink)
+    /** After a close: the liquid pours onto the cover from its hinge edge. */
+    private fun drawTravasoCover(canvas: Canvas, w: Float, h: Float) {
+        val t = FoldMath.unglide(1f - p)
+        val vertical = coverHingeEdge == 0 || coverHingeEdge == 2
+        // Across is away from the hinge, along runs beside it
+        val across = if (vertical) w else h
+        val along = if (vertical) h else w
+        val reach = swell(t / 0.7f)
+        val spread = swell(FoldMath.clamp((t - 0.08f) / 0.62f))
+        val past = FoldMath.smooth(FoldMath.clamp((t - 0.7f) / 0.3f))
+        val aAcross = across * (0.02f + 1.03f * reach + 0.1f * past)
+        val bAlong = along * (0.06f + 0.46f * spread + 0.08f * past)
+        val n = 2f + 9f * FoldMath.smooth(FoldMath.clamp((t - 0.1f) / 0.6f))
+        val fade = 1f - FoldMath.smooth(FoldMath.clamp((t - 0.7f) / 0.2f))
+        if (t >= 0.999f) return
+        when (coverHingeEdge) {
+            0 -> drawLiquid(canvas, w, h, 0f, h / 2f, aAcross, bAlong, n, fade)
+            2 -> drawLiquid(canvas, w, h, w, h / 2f, aAcross, bAlong, n, fade)
+            1 -> drawLiquid(canvas, w, h, w / 2f, 0f, bAlong, aAcross, n, fade)
+            else -> drawLiquid(canvas, w, h, w / 2f, h, bAlong, aAcross, n, fade)
         }
     }
 
-    /** Catenaria closing: the opening retraced, frame for frame (p runs the other way). */
-    private fun drawCatenariaClose(canvas: Canvas, w: Float, h: Float) = drawCatenaria(canvas, w, h)
+    /** Travaso closing: the opening retraced, frame for frame (p runs the other way). */
+    private fun drawTravasoClose(canvas: Canvas, w: Float, h: Float) = drawTravaso(canvas, w, h)
 
     // endregion
 
