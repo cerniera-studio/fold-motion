@@ -147,11 +147,17 @@ class FoldMotionService : Service(), SensorEventListener {
     private fun planP(t: Float): Float =
         if (t < finaleAt) {
             // Drawn in by magnetic attraction: unhurried, then a strengthening pull, then contact
-            var f = t / buildMs.coerceAtLeast(1f)
-            // Waiting for the hinge: past 80% of the way the build-up eases ever closer to
-            // contact without reaching it, so the motion keeps pace with a slow hand
-            if (awaitingHinge && f > 0.8f) f = 0.8f + 0.2f * (1f - kotlin.math.exp(-(f - 0.8f) / 0.35f))
-            MotionConfig.BUILD_END * FoldMath.magnetIn(FoldMath.clamp(f))
+            if (awaitingHinge) {
+                // Waiting for the hinge (27 Nov 2026): continue from where the build-up ended,
+                // never stepping back. Travaso's column keeps sinking towards the crease, ever
+                // more slowly, so the motion keeps pace with a slow hand; the lamp effects hold
+                // at the build-up's end, short of their contact
+                val since = (t - buildMs).coerceAtLeast(0f)
+                if (MotionConfig.CLOSING_EFFECT == MotionConfig.Effect.TRAVASO)
+                    MotionConfig.BUILD_END + (MotionConfig.TRAVASO_CREEP_P - MotionConfig.BUILD_END) *
+                        (1f - kotlin.math.exp(-since / (MotionConfig.TRAVASO_CREEP_MS * animScale().coerceAtLeast(0.01f))))
+                else MotionConfig.BUILD_END
+            } else MotionConfig.BUILD_END * FoldMath.magnetIn(FoldMath.clamp(t / buildMs.coerceAtLeast(1f)))
         } else {
             val u = FoldMath.clamp((t - finaleAt) / finaleMs)
             // The finale settles rather than stops: smoothstep, so it eases out to black

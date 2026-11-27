@@ -227,6 +227,13 @@ object MotionConfig {
     const val TRAVASO_CONTACT_P = 0.9f
 
     /**
+     * Travaso, a slow close: while waiting for the hinge the column sinks from BUILD_END
+     * towards this progress (short of CONTACT_P), easing with this time constant in ms.
+     */
+    const val TRAVASO_CREEP_P = 0.8f
+    const val TRAVASO_CREEP_MS = 700f
+
+    /**
      * Fanale reversed, as shares of the reveal's time: the closing's contact (p = 0.545) comes at
      * about 0.48 of the reveal (the click), and touch returns at 0.75, the halves nearly gone.
      */
