@@ -283,6 +283,9 @@ class Lamps(rosso: Boolean) {
 
     fun fillAll(v: Float) { for (s in 0..1) level[s].fill(v) }
 
+    /** Unlit beads go fully dark rather than holding an ember: for light that must arrive from nothing. */
+    fun dropEmbers() { for (s in 0..1) for (i in level[s].indices) if (level[s][i] <= EMBER) level[s][i] = 0f }
+
     /** Multiplies every bead (a bloom or a fade). */
     fun scale(k: Float) { for (s in 0..1) for (i in level[s].indices) level[s][i] *= k }
 

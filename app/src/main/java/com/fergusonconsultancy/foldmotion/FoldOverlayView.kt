@@ -391,7 +391,7 @@ class FoldOverlayView(context: Context) : View(context) {
         if (alphaAll <= 0.001f || p <= 0f) return
         drawCount++
         // Opening: until the main screen's size is known, the whole oversized window is black
-        if (mode == Mode.OPEN && (contentW <= 0 || p >= 0.999f)) {
+        if (mode == Mode.OPEN && !coverPour && (contentW <= 0 || p >= 0.999f)) {
             canvas.drawColor(Color.BLACK)
             if (contentW <= 0) return
         }
@@ -1822,6 +1822,7 @@ class FoldOverlayView(context: Context) : View(context) {
         uniform float n;
         uniform float band;
         uniform float fade;
+        uniform float veil;
         layout(color) uniform half4 glow;
         layout(color) uniform half4 core;
         half4 main(float2 p) {
@@ -1832,8 +1833,8 @@ class FoldOverlayView(context: Context) : View(context) {
             float rim = exp(-pow((r - 1.0) / e, 2.0)) * fade;
             float lit = clamp(0.55 - (p.y - c.y) / ab.y * 0.5 - (p.x - c.x) / ab.x * 0.2, 0.0, 1.0);
             float spec = exp(-pow((r - 1.0) / (e * 0.4), 2.0)) * lit * fade;
-            float wash = clamp((r - (1.0 - e * 5.0)) / (e * 5.0), 0.0, 1.0) * inside * fade * 0.22;
-            float a = clamp((1.0 - inside) + rim * 0.6 + wash + spec * 0.85, 0.0, 1.0);
+            float wash = clamp((r - (1.0 - e * 5.0)) / (e * 5.0), 0.0, 1.0) * inside * fade * 0.22 * veil;
+            float a = clamp(veil * (1.0 - inside) + rim * 0.6 + wash + spec * 0.85, 0.0, 1.0);
             half3 col = glow.rgb * half(rim * 0.6 + wash) + core.rgb * half(spec * 0.85);
             return half4(min(col, half3(a)), half(a));
         }
@@ -1862,7 +1863,7 @@ class FoldOverlayView(context: Context) : View(context) {
     }
 
     /** Draws the liquid centred on (cx, cy) with half-extents a, b and squareness n. */
-    private fun drawLiquid(canvas: Canvas, w: Float, h: Float, cx: Float, cy: Float, a: Float, b: Float, n: Float, fade: Float) {
+    private fun drawLiquid(canvas: Canvas, w: Float, h: Float, cx: Float, cy: Float, a: Float, b: Float, n: Float, fade: Float, veil: Boolean = true) {
         val aa = max(a, 2f); val bb = max(b, 2f)
         val band = max(3f, min(w, h) * 0.009f)
         val glow = MotionConfig.RIM_GLOW; val core = MotionConfig.RIM_CORE
@@ -1874,6 +1875,7 @@ class FoldOverlayView(context: Context) : View(context) {
             rs.setFloatUniform("n", n)
             rs.setFloatUniform("band", band)
             rs.setFloatUniform("fade", f)
+            rs.setFloatUniform("veil", if (veil) 1f else 0f)
             rs.setColorUniform("glow", glow)
             rs.setColorUniform("core", core)
             travasoPaint.shader = rs
@@ -1894,7 +1896,7 @@ class FoldOverlayView(context: Context) : View(context) {
         travasoPath.close()
         travasoPath.fillType = Path.FillType.EVEN_ODD
         blackPaint.alpha = 255
-        canvas.drawPath(travasoPath, blackPaint)
+        if (veil) canvas.drawPath(travasoPath, blackPaint)
         travasoStroke.color = glow
         travasoStroke.strokeWidth = band * 1.6f
         travasoStroke.alpha = (255 * min(1f, 0.6f * f)).toInt()
@@ -1944,57 +1946,66 @@ class FoldOverlayView(context: Context) : View(context) {
         canvas.restoreToCount(c)
     }
 
-    /** Drawn with the hinge on the left edge of a [w] by [h] cover. */
+    /**
+     * Drawn with the hinge on the left edge of a [w] by [h] cover. Light only (27 Nov 2026): the
+     * lamp is drawn as it is in the dark, glow without housing, at three quarters of its strength,
+     * since it now lies over the cover's content. It is born at the hinge, lights, blooms once,
+     * then rides away to the far edge and fades: across and gone.
+     */
     private fun drawLampCoverLocal(canvas: Canvas, w: Float, h: Float) {
         val t = FoldMath.unglide(1f - p)
         val effect = MotionConfig.CLOSING_EFFECT
         val l = rosso
-        // Laid out as the right half of a screen twice the cover's width, shifted left by one
-        // cover: its bar then runs to the hinge edge, its ring sits out on the cover
+        val roomDark = l.darkness
+        l.darkness = 1f
         l.layout(w * 2f, h, turned = effect == MotionConfig.Effect.FANALE)
         l.fillAll(0f)
-        l.barRun(1, t, 0.06f, 0.26f, fromTip = true)
-        if (effect == MotionConfig.Effect.CIRCUITO) l.ringBothWays(1, t, 0.27f, 0.58f, l.attach(1))
-        else l.sweepRing(1, t, 0.27f, 0.6f, l.attach(1), if (effect == MotionConfig.Effect.FANALE) -1 else 1)
-        val bloom = FoldMath.smooth(FoldMath.clamp((t - 0.6f) / 0.05f)) * (1f - FoldMath.smooth(FoldMath.clamp((t - 0.66f) / 0.2f)))
+        l.barRun(1, t, 0.06f, 0.24f, fromTip = true)
+        if (effect == MotionConfig.Effect.CIRCUITO) l.ringBothWays(1, t, 0.25f, 0.52f, l.attach(1))
+        else l.sweepRing(1, t, 0.25f, 0.54f, l.attach(1), if (effect == MotionConfig.Effect.FANALE) -1 else 1)
+        l.dropEmbers()
+        val bloom = FoldMath.smooth(FoldMath.clamp((t - 0.54f) / 0.05f)) * (1f - FoldMath.smooth(FoldMath.clamp((t - 0.6f) / 0.2f)))
         if (bloom > 0f) l.scale(1f + 0.28f * bloom * density)
-        // The half slides away from the hinge, its lamp riding it
-        val part = FoldMath.magnetOut(FoldMath.clamp((t - 0.64f) / 0.36f))
-        val edge = w * part
-        val offset = -w + edge
-        blackPaint.alpha = 255
-        if (edge < w) canvas.drawRect(edge, 0f, w + 1f, h, blackPaint)
+        // Rides away from the hinge to the far edge, fading as it goes
+        val go = FoldMath.magnetOut(FoldMath.clamp((t - 0.6f) / 0.4f))
+        val offset = -w + w * 0.5f * go
+        val fade = 0.75f * (1f - FoldMath.smooth(FoldMath.clamp((t - 0.7f) / 0.3f)))
         // The light coming back out of the hinge
         if (t < 0.1f) {
             val k = FoldMath.smooth(FoldMath.clamp(t / 0.04f)) * (1f - FoldMath.smooth(FoldMath.clamp((t - 0.06f) / 0.04f)))
             val tip = l.tipX(1, offset)
-            l.glow(canvas, tip, l.barLine, w * 0.05f, w * 0.05f, 0.55f * k)
-            l.coreDot(canvas, tip, l.barLine, l.ringRadius * 0.08f, 0.95f * k)
+            l.glow(canvas, tip, l.barLine, w * 0.05f, w * 0.05f, 0.45f * k)
+            l.coreDot(canvas, tip, l.barLine, l.ringRadius * 0.08f, 0.8f * k)
         }
-        l.draw(canvas, 1, offset)
-        if (bloom > 0.004f) l.glow(canvas, w * 0.7f + edge, h * 0.5f, l.ringRadius * 2.4f, l.ringRadius * 2.4f, 0.24f * bloom)
+        l.draw(canvas, 1, offset, fade)
+        if (bloom > 0.004f) l.glow(canvas, w * 0.7f + w * 0.5f * go, h * 0.5f, l.ringRadius * 2.4f, l.ringRadius * 2.4f, 0.2f * bloom * fade)
+        l.darkness = roomDark
     }
 
-    /** After a close: the liquid pours onto the cover from its hinge edge. */
+    /**
+     * After a close: Travaso's light comes back out of the hinge onto the cover (27 Nov 2026,
+     * light only). On the cover One UI shows the overlay's light but not its black, so there is
+     * no pretend dark: only the meniscus, born at the hinge edge, crossing the cover and running
+     * off its far edges, warm, a little dimmer than on the inner screen, then gone.
+     */
     private fun drawTravasoCover(canvas: Canvas, w: Float, h: Float) {
         val t = FoldMath.unglide(1f - p)
         val vertical = coverHingeEdge == 0 || coverHingeEdge == 2
-        // Across is away from the hinge, along runs beside it
         val across = if (vertical) w else h
         val along = if (vertical) h else w
-        val reach = swell(t / 0.7f)
-        val spread = swell(FoldMath.clamp((t - 0.08f) / 0.62f))
-        val past = FoldMath.smooth(FoldMath.clamp((t - 0.7f) / 0.3f))
-        val aAcross = across * (0.02f + 1.03f * reach + 0.1f * past)
-        val bAlong = along * (0.06f + 0.46f * spread + 0.08f * past)
-        val n = 2f + 9f * FoldMath.smooth(FoldMath.clamp((t - 0.1f) / 0.6f))
-        val fade = 1f - FoldMath.smooth(FoldMath.clamp((t - 0.7f) / 0.2f))
-        if (t >= 0.999f) return
+        val reach = swell(t / 0.62f)
+        val spread = swell(FoldMath.clamp((t - 0.06f) / 0.56f))
+        val past = FoldMath.smooth(FoldMath.clamp((t - 0.62f) / 0.38f))
+        val aAcross = across * (0.02f + 1.03f * reach + 0.15f * past)
+        val bAlong = along * (0.06f + 0.46f * spread + 0.1f * past)
+        val n = 2f + 9f * FoldMath.smooth(FoldMath.clamp((t - 0.08f) / 0.54f))
+        val fade = 0.75f * FoldMath.smooth(FoldMath.clamp(t / 0.06f)) * (1f - FoldMath.smooth(FoldMath.clamp((t - 0.6f) / 0.32f)))
+        if (fade <= 0.004f) return
         when (coverHingeEdge) {
-            0 -> drawLiquid(canvas, w, h, 0f, h / 2f, aAcross, bAlong, n, fade)
-            2 -> drawLiquid(canvas, w, h, w, h / 2f, aAcross, bAlong, n, fade)
-            1 -> drawLiquid(canvas, w, h, w / 2f, 0f, bAlong, aAcross, n, fade)
-            else -> drawLiquid(canvas, w, h, w / 2f, h, bAlong, aAcross, n, fade)
+            0 -> drawLiquid(canvas, w, h, 0f, h / 2f, aAcross, bAlong, n, fade, veil = false)
+            2 -> drawLiquid(canvas, w, h, w, h / 2f, aAcross, bAlong, n, fade, veil = false)
+            1 -> drawLiquid(canvas, w, h, w / 2f, 0f, bAlong, aAcross, n, fade, veil = false)
+            else -> drawLiquid(canvas, w, h, w / 2f, h, bAlong, aAcross, n, fade, veil = false)
         }
     }
 

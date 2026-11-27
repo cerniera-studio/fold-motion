@@ -336,10 +336,10 @@ object MotionConfig {
     const val HOLD_TIMEOUT_MS = 600L
 
     /** Travaso: how long the pour onto the cover takes, at the designed speed. */
-    const val COVER_POUR_MS = 700L
+    const val COVER_POUR_MS = 600L
 
-    /** The lamp transitions' arrival on the cover: the light, the bloom, then the half parting. */
-    const val COVER_LAMP_MS = 950L
+    /** The lamp transitions' arrival on the cover: the light from the hinge, one bloom, then away. */
+    const val COVER_LAMP_MS = 720L
 
     /**
      * Travaso: the pour onto the cover holds black this long after the switch, for the cover
