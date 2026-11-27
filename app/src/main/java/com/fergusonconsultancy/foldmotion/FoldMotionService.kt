@@ -953,10 +953,11 @@ class FoldMotionService : Service(), SensorEventListener {
                     // switch, the pour was spent on a panel still powering up, and only its last
                     // stretch, light in the corners, was ever seen. Capped, never stuck
                     val waited = SystemClock.uptimeMillis() - panelWaitFrom
-                    if (display?.state == Display.STATE_ON && waited >= MotionConfig.COVER_SETTLE_MS ||
-                        waited >= MotionConfig.COVER_WAIT_MAX_MS) {
+                    // Both panels are one display to Android, already "on" from the inner screen,
+                    // so its state says nothing about the cover glass: wait a fixed settle instead
+                    if (waited >= MotionConfig.COVER_SETTLE_MS) {
                         panelLit = true
-                        EventLog.add(this, "Travaso: cover lit after ${waited}ms, pour starts")
+                        EventLog.add(this, "Travaso: held ${waited}ms for the cover to light, pour starts")
                         phaseAt = SystemClock.uptimeMillis()
                     } else {
                         view.show(1f)
