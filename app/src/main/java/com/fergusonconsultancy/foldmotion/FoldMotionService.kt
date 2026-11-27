@@ -422,6 +422,9 @@ class FoldMotionService : Service(), SensorEventListener {
         // until the next frame is drawn, which is when content could show through.
         val size = when {
             !active -> IDLE_SIZE
+            // The cover pour keeps the window it closed with: a resize at the switch means an
+            // empty buffer until the next frame, when the cover's content could show
+            overlay?.coverPour == true -> WindowManager.LayoutParams.MATCH_PARENT
             overlay?.mode == FoldOverlayView.Mode.OPEN -> oversize()
             else -> WindowManager.LayoutParams.MATCH_PARENT
         }
@@ -623,6 +626,14 @@ class FoldMotionService : Service(), SensorEventListener {
      * pours onto it from the hinge edge. Only when the cover lights unlocked (an app continued
      * on the cover): the lock screen sits above every app overlay, so a pour there would be hidden.
      */
+    /** Diagnostics (27 Nov 2026): the window's real state, for when the black fails to cover. */
+    private fun logWindow(label: String) {
+        val v = overlay ?: return
+        val loc = IntArray(2).also { runCatching { v.getLocationOnScreen(it) } }
+        EventLog.add(this, "Window $label: alpha ${"%.2f".format(params.alpha)}, view ${v.width}x${v.height} at ${loc[0]},${loc[1]}, " +
+            "shown ${v.isShown}, attached ${v.isAttachedToWindow}, display ${v.display?.displayId ?: -1} state ${v.display?.state ?: -1}")
+    }
+
     private fun startCoverPour() {
         val locked = runCatching {
             getSystemService(android.app.KeyguardManager::class.java)?.isKeyguardLocked == true
@@ -656,6 +667,8 @@ class FoldMotionService : Service(), SensorEventListener {
         panelLit = false
         panelWaitFrom = SystemClock.uptimeMillis()
         enter(Phase.COVER_POUR)
+        logWindow("at the cover pour")
+        mainHandler.postDelayed({ if (phase == Phase.COVER_POUR) logWindow("during the hold") }, 150)
     }
 
     private fun startClose(now: Long, scale: Float) {
@@ -843,6 +856,7 @@ class FoldMotionService : Service(), SensorEventListener {
                     awaitingHinge = true
                     finaleAt = Float.MAX_VALUE
                     EventLog.add(this, "Slower close than usual: waiting for the hinge (${lastAngle.roundToInt()}°)")
+                    logWindow("as the wait begins")
                 }
                 // Held part-folded rather than closing: give the screen back
                 if (awaitingHinge && t > kotlin.math.min(MotionConfig.SLOW_CLOSE_WAIT_MS * scale, MotionConfig.WATCHDOG_MS - 500f)) {
