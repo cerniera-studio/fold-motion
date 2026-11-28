@@ -42,10 +42,10 @@ object MotionConfig {
      * and back. Choosing one here sets both; they can still be mixed below.
      */
     enum class Style(val label: String, val detail: String, val closing: Effect, val opening: Effect) {
-        TRAVASO("Travaso", "Your screen pours out of the crease like a liquid and spreads to fill the glass; closing drains it back into the crease and pours it onto the cover.", Effect.TRAVASO, Effect.TRAVASO),
         CIRCUITO("Circuito", "Both lamps light at their outer edges and the light runs round the rings and in to the crease. Closing runs it back out.", Effect.CIRCUITO, Effect.CIRCUITO),
-        FANALE("Fanale", "The lamps light one after the other, right then left, like unlocking the car. Closing runs the same path back, left then right.", Effect.FANALE, Effect.FANALE),
-        FANALE_REVERSE("Fanale reversed", "Light rises from the hinge, out along the bars and round the rings. Closing runs it back round the rings and in to the crease.", Effect.FANALE_REVERSE, Effect.FANALE_REVERSE),
+        FANALE_REVERSE("Fanale", "Light rises from the hinge, out along the bars and round the rings. Closing runs it back round the rings and in to the crease.", Effect.FANALE_REVERSE, Effect.FANALE_REVERSE),
+        FANALE("Otto", "The lamps with figure-8 joints, a nod to the Fold 8: both rings sweep round together, the light runs in along both bars and meets in the middle, opening and closing.", Effect.FANALE, Effect.FANALE),
+        TRAVASO("Travaso", "Your screen pours out of the crease like a liquid and spreads to fill the glass; closing drains it back into the crease and pours it onto the cover.", Effect.TRAVASO, Effect.TRAVASO),
     }
 
     /**
@@ -143,18 +143,18 @@ object MotionConfig {
 
     /** The openings offered in the app. */
     enum class Opening(val label: String, val detail: String, val effect: Effect) {
-        TRAVASO("Travaso", "Your screen pours out of the crease as a column, then spreads sideways a beat behind, its corners relaxing into the screen's own; one warm meniscus of light on its edge", Effect.TRAVASO),
         CIRCUITO("Circuito", "From both lamps' outer edges, round each ring both ways, in along the bars; the two lights meet on the crease, bloom, and the halves part", Effect.CIRCUITO),
-        FANALE("Fanale", "The right ring sweeps round and its bar runs in to the crease; the light crosses, runs out along the left bar and closes the left ring; the lamps bloom and the halves part", Effect.FANALE),
-        FANALE_REVERSE("Fanale reversed", "A point of light rises from the hinge, splits, runs out along both bars and sweeps the full circle of each ring; the lamps bloom and the halves part", Effect.FANALE_REVERSE),
+        FANALE_REVERSE("Fanale", "A point of light rises from the hinge, splits, runs out along both bars and sweeps the full circle of each ring; the lamps bloom and the halves part", Effect.FANALE_REVERSE),
+        FANALE("Otto", "Both rings sweep round together, each from where its bar leaves it, then the light runs in along both bars and meets in the middle; the lamps bloom with the click and the halves part", Effect.FANALE),
+        TRAVASO("Travaso", "Your screen pours out of the crease as a column, then spreads sideways a beat behind, its corners relaxing into the screen's own; one warm meniscus of light on its edge", Effect.TRAVASO),
     }
 
     /** The closings offered in the app. */
     enum class Closing(val label: String, val detail: String, val effect: Effect) {
-        TRAVASO("Travaso", "The opening run back: your screen drains into the crease, sides first, then the column; once shut, the same liquid pours in from the hinge edge of the cover", Effect.TRAVASO),
         CIRCUITO("Circuito", "The opening run back: a point in the closing gap splits, runs out along both bars and round each ring both ways, meeting at the outer edges; the halves seal on a strip of light", Effect.CIRCUITO),
-        FANALE("Fanale", "The opening run back: round the left ring, down its bar, across the crease, out along the right bar and round the right ring; the halves seal on a strip of light", Effect.FANALE),
-        FANALE_REVERSE("Fanale reversed", "The opening run back: the left ring from three o'clock clockwise, the right from nine anticlockwise, then in along both bars to meet in the middle as the halves seal", Effect.FANALE_REVERSE),
+        FANALE_REVERSE("Fanale", "The opening run back: the left ring from three o'clock clockwise, the right from nine anticlockwise, then in along both bars to meet in the middle as the halves seal", Effect.FANALE_REVERSE),
+        FANALE("Otto", "As it opens: both rings sweep round together, then in along both bars to meet in the middle as the halves seal on a strip of light", Effect.FANALE),
+        TRAVASO("Travaso", "The opening run back: your screen drains into the crease, sides first, then the column; once shut, the same liquid pours in from the hinge edge of the cover", Effect.TRAVASO),
     }
 
     private const val OPENING_KEY = "opening_effect"
@@ -214,7 +214,7 @@ object MotionConfig {
      * LIGHTS_T (the haptic click); touch returns at TOUCH_T, when the halves have nearly gone.
      * Closing: the halves meet at CONTACT_P of the closing's progress (the click).
      */
-    const val FANALE_LIGHTS_T = 0.54f
+    const val FANALE_LIGHTS_T = 0.37f
     const val FANALE_TOUCH_T = 0.8f
     const val FANALE_CONTACT_P = 0.545f
 

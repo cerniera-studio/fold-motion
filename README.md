@@ -4,7 +4,7 @@ A fold transition for the Galaxy Z Fold8 Ultra. Three styles, chosen in the app:
 
 - **Visconti**: a lacquer arch closes in on the crease (closing); dark glass with Visconti light inside it opens into a lit bezel that seats and slides away (opening).
 - **Giulietta**: the same glass opening, woken by the Giulietta's rear lamps. The right ring sweeps round where your fingers left the cover, its beaded bar runs in to the crease, the light crosses, and the left lamp completes as the halves' hold gives.
-- **Fanale**: Alfa Romeo as the only influence, with a nod to the Fold 8: the bars leave their rings at opposite points, so the light traces the waist of an 8. Opening, both lamps light in sequence, bloom, and the dark halves part carrying them off the edges. Closing locks the car: the halves slide in lit, meet with a soft close, the lamps go out like an indicator, and the last point of light dips into the hinge.
+- **Otto** (called Fanale until 28 Nov 2026): the lamps with figure-8 joints, a nod to the Fold 8: the bars leave their rings at opposite points, so the light traces the waist of an 8. Both lamps run at once, opening and closing: the rings sweep round together, the light runs in along both bars and meets in the middle.
 
 - **Travaso** (27 Nov 2026, replacing Catenaria and Membrana): your screen as a liquid, poured between two vessels. Opening, it pours out of the crease as a column and spreads to fill the glass, its corners seating into the screen's own; closing drains it back into the crease and, if the cover lights unlocked, pours it onto the cover from the hinge edge. The meniscus is an AGSL GPU shader; its light takes your wallpaper's Material You colours by default, or champagne, rosso or Visconti.
 

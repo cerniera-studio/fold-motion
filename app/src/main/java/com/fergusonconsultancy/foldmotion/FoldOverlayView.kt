@@ -1380,24 +1380,25 @@ class FoldOverlayView(context: Context) : View(context) {
         val cx = w / 2f
         val l = rosso
         l.layout(w, h, turned = true)
-        l.scheduleIgnite(1, t, 0.02f, 0.15f, 0.13f, 0.29f, barFromTip = false)
-        l.scheduleIgnite(0, t, 0.42f, 0.54f, 0.30f, 0.43f, barFromTip = true)
+        // Otto (28 Nov 2026): both lamps run at once. Each ring sweeps clockwise from where its
+        // bar leaves it (the lamps are point-symmetric, so both turn the same way and flow into
+        // their bars), then the light runs in along both bars and the two points meet in the middle
+        for (side in 0..1) {
+            l.sweepRing(side, t, 0.02f, 0.2f, l.attach(side), +1)
+            l.barRun(side, t, 0.2f, 0.33f, fromTip = false)
+        }
         val bt = MotionConfig.FANALE_LIGHTS_T
         val bloom = FoldMath.smooth(FoldMath.clamp((t - (bt - 0.03f)) / 0.04f)) * (1f - FoldMath.smooth(FoldMath.clamp((t - bt - 0.04f) / 0.16f)))
         if (bloom > 0f) l.scale(1f + 0.25f * bloom * density)
 
-        val eR = FoldMath.magnetOut(FoldMath.clamp((t - 0.5f) / 0.4f))
-        val eL = FoldMath.magnetOut(FoldMath.clamp((t - 0.54f) / 0.38f))
-        val xr = cx + (w - cx) * eR
-        val xl = cx - cx * eL
-        fanaleHalves(canvas, l, w, h, xl, xr, eL, eR, 1f)
+        // The halves part together after the meeting
+        val e = FoldMath.magnetOut(FoldMath.clamp((t - (bt + 0.02f)) / 0.4f))
+        val xr = cx + (w - cx) * e
+        val xl = cx - cx * e
+        fanaleHalves(canvas, l, w, h, xl, xr, e, e, 1f)
 
-        // The seam: as the light crosses the crease, one fine line
-        val seam = FoldMath.smooth(FoldMath.clamp((t - 0.27f) / 0.025f)) * (1f - FoldMath.smooth(FoldMath.clamp((t - 0.31f) / 0.06f)))
-        if (seam > 0.004f && xr - xl < 2f) {
-            l.glow(canvas, cx, h * 0.5f, w * 0.03f, h * 0.55f, 0.3f * seam)
-            l.line(canvas, cx, 0f, h, max(1.2f, w * 0.0012f), 0.6f * seam)
-        }
+        // The last stretch: from each bar's tip a point runs to the crease, and they meet
+        if (xr - xl < 2f) circuitoMeet(canvas, l, w, h, t, 0.33f, bt, bloom, closing = false)
         // Lights on: the rings breathe out onto the bodywork
         if (bloom > 0.004f && xr - xl < w * 0.3f) {
             for (side in 0..1) {
@@ -1429,21 +1430,16 @@ class FoldOverlayView(context: Context) : View(context) {
         val q = buildTime()
         val e = closeTravel(q)
         val xl = cx * e; val xr = w - (w - cx) * e
-        l.sweepRing(0, q, 0.04f, 0.3f, l.attach(0), +1)
-        l.barRun(0, q, 0.3f, 0.42f, fromTip = false)
-        l.barRun(1, q, 0.52f, 0.64f, fromTip = true)
-        l.sweepRing(1, q, 0.64f, 0.92f, l.attach(1), -1)
+        // Otto (28 Nov 2026): as it opens, both lamps at once. Both rings sweep clockwise from
+        // where their bars leave them, then both bars run in and the two points meet in the
+        // middle as the halves seal on the strip of light
+        for (side in 0..1) {
+            l.sweepRing(side, q, RING_FROM, RING_TO, l.attach(side), +1)
+            l.barRun(side, q, RING_TO + 0.01f, BAR_TO, fromTip = false)
+        }
         val fade = 1f - FoldMath.smooth(FoldMath.clamp((p - 0.8f) / 0.14f))
         fanaleHalves(canvas, l, w, h, xl, xr, 1f - e, 1f - e, fade)
-        // The crossing: one point from the left bar's tip over the crease to the right bar's tip
-        if (p < MotionConfig.BUILD_END && q in 0.42f..0.52f) {
-            val k = FoldMath.smooth((q - 0.42f) / 0.1f)
-            val a = l.tipX(0, xl - cx); val b = l.tipX(1, xr - cx)
-            val x = a + (b - a) * k
-            l.glow(canvas, x, l.barLine, w * 0.022f, w * 0.022f, 0.55f)
-            l.coreDot(canvas, x, l.barLine, l.ringRadius * 0.08f, 0.95f)
-        }
-        closeMeetAndStrip(canvas, l, w, h, xl, xr, q, meet = false)
+        closeMeetAndStrip(canvas, l, w, h, xl, xr, q, meet = true)
     }
 
     /**
