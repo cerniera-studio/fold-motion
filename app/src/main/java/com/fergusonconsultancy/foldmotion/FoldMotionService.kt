@@ -46,7 +46,7 @@ import kotlin.math.roundToInt
  */
 class FoldMotionService : Service(), SensorEventListener {
 
-    private enum class Phase { IDLE, PLAYING, HOLDING, FADING, ARMED, WAITING_PANEL, AWAIT_UNLOCK, REVEALING }
+    private enum class Phase { IDLE, PLAYING, HOLDING, FADING, ARMED, WAITING_PANEL, AWAIT_UNLOCK, REVEALING, COVER_POUR }
 
     private lateinit var sensorManager: SensorManager
     private var hingeSensor: Sensor? = null
@@ -129,11 +129,35 @@ class FoldMotionService : Service(), SensorEventListener {
     private var finaleMs = MotionConfig.FINALE_MS.toFloat()
     private var finaleFromP = MotionConfig.BUILD_END
 
+    /** How long the build-up was planned to take; finaleAt moves, this does not. */
+    private var buildMs = 1f
+
+    /**
+     * A slow close (26 Nov 2026): the plan is made from how fast this owner usually closes, so
+     * a slower close used to finish, hold black, time out, fade back and then play again when
+     * the hinge finally reported shut. Now, if the build-up runs out before the hinge has
+     * reported closed, the effect waits for it: the build-up keeps going, ever more slowly
+     * towards contact, and the finale plays the moment the hinge says shut. True from then
+     * until the hinge reports, or the wait gives up (the phone held part-folded).
+     */
+    private var awaitingHinge = false
+    private var hingeShut = false
+
     /** Closing progress at t ms into the effect, following the plan. */
     private fun planP(t: Float): Float =
         if (t < finaleAt) {
             // Drawn in by magnetic attraction: unhurried, then a strengthening pull, then contact
-            MotionConfig.BUILD_END * FoldMath.magnetIn(FoldMath.clamp(t / finaleAt.coerceAtLeast(1f)))
+            if (awaitingHinge) {
+                // Waiting for the hinge (27 Nov 2026): continue from where the build-up ended,
+                // never stepping back. Travaso's column keeps sinking towards the crease, ever
+                // more slowly, so the motion keeps pace with a slow hand; the lamp effects hold
+                // at the build-up's end, short of their contact
+                val since = (t - buildMs).coerceAtLeast(0f)
+                if (MotionConfig.CLOSING_EFFECT == MotionConfig.Effect.TRAVASO)
+                    MotionConfig.BUILD_END + (MotionConfig.TRAVASO_CREEP_P - MotionConfig.BUILD_END) *
+                        (1f - kotlin.math.exp(-since / (MotionConfig.TRAVASO_CREEP_MS * animScale().coerceAtLeast(0.01f))))
+                else MotionConfig.BUILD_END
+            } else MotionConfig.BUILD_END * FoldMath.magnetIn(FoldMath.clamp(t / buildMs.coerceAtLeast(1f)))
         } else {
             val u = FoldMath.clamp((t - finaleAt) / finaleMs)
             // The finale settles rather than stops: smoothstep, so it eases out to black
@@ -158,6 +182,12 @@ class FoldMotionService : Service(), SensorEventListener {
 
         /** Idle window size in pixels: present, so the app keeps its frame signal, but invisible. */
         private const val IDLE_SIZE = 1
+
+        /** The transitions that carry on onto the cover after a close. */
+        private val COVER_EFFECTS = setOf(
+            MotionConfig.Effect.TRAVASO, MotionConfig.Effect.FANALE,
+            MotionConfig.Effect.FANALE_REVERSE, MotionConfig.Effect.CIRCUITO
+        )
         private const val FRAME_CHECK_MS = 250L
     }
     private var tickDone = false
@@ -205,6 +235,10 @@ class FoldMotionService : Service(), SensorEventListener {
             currentInner = inner
             val now = SystemClock.uptimeMillis()
 
+            // Travaso: a close that played on the inner screen carries on onto the cover
+            // Every transition carries on onto the cover (27 Nov 2026), as Travaso does
+            val pourDue = !inner && MotionConfig.CLOSING_EFFECT in COVER_EFFECTS &&
+                (phase == Phase.PLAYING || phase == Phase.HOLDING)
             if (!inner) {
                 // Scatto: a close with no transition (or one cut short before its climax) is still felt
                 if (!closeFelt && isInteractive()) {
@@ -247,6 +281,7 @@ class FoldMotionService : Service(), SensorEventListener {
                 startReveal()
                 return
             }
+            if (pourDue) { startCoverPour(); return }
             // Otherwise the arriving screen is always clean
             finish()
         }
@@ -387,18 +422,31 @@ class FoldMotionService : Service(), SensorEventListener {
     private fun setActiveWindow(active: Boolean, touchThrough: Boolean = false) {
         val view = overlay ?: return
         if (!::params.isInitialized) return
-        val alpha = if (active && !touchThrough) 1f else MotionConfig.IDLE_WINDOW_ALPHA
+        // Covering the screen means not letting touches through (27 Nov 2026): Android caps an
+        // overlay that has FLAG_NOT_TOUCHABLE at 80% opacity, whatever alpha it asks for (AOSP
+        // "Cap alpha to max if SAW + FLAG_NOT_TOUCHABLE"), which left every effect's black
+        // see-through. So while an effect covers the screen the window takes touches, briefly,
+        // and is drawn fully opaque; touch-through returns with the 80% alpha at the opening's
+        // climax (rule 5), between effects, and for the light-only cover arrival
+        val through = touchThrough || overlay?.coverPour == true
+        val alpha = if (active && !through) 1f else MotionConfig.IDLE_WINDOW_ALPHA
+        val flags = if (active && !through) params.flags and WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE.inv()
+            else params.flags or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
         val hz = if (active) display?.supportedModes?.maxOfOrNull { it.refreshRate } ?: 0f else 0f
         // Opening uses a fixed square larger than either panel, so the window is not
         // resized when One UI switches screens. A resize means a new, empty buffer
         // until the next frame is drawn, which is when content could show through.
         val size = when {
             !active -> IDLE_SIZE
+            // The cover pour keeps the window it closed with: a resize at the switch means an
+            // empty buffer until the next frame, when the cover's content could show
+            overlay?.coverPour == true -> WindowManager.LayoutParams.MATCH_PARENT
             overlay?.mode == FoldOverlayView.Mode.OPEN -> oversize()
             else -> WindowManager.LayoutParams.MATCH_PARENT
         }
-        if (params.alpha == alpha && params.preferredRefreshRate == hz && params.width == size) return
+        if (params.alpha == alpha && params.preferredRefreshRate == hz && params.width == size && params.flags == flags) return
         params.alpha = alpha
+        params.flags = flags
         params.preferredRefreshRate = hz
         params.width = size
         params.height = size
@@ -513,15 +561,20 @@ class FoldMotionService : Service(), SensorEventListener {
             phase == Phase.ARMED && closing -> finish()
             // Closing the inner screen
             phase == Phase.IDLE && innerNow && closing && !bounce -> startClose(now, scale)
-            // This close is quicker than usual: the hinge says closed while still building up,
-            // so go straight to the finale from wherever the build-up has reached
+            // The hinge says closed while still building up (a quicker close than usual, or a slow
+            // one the effect has been waiting for): straight to the finale from wherever it is
             phase == Phase.PLAYING && closing && angle <= 1f && elapsed() < finaleAt -> {
                 val t = elapsed()
+                hingeShut = true
                 finaleFromP = planP(t)
+                val waited = awaitingHinge
+                awaitingHinge = false
                 finaleAt = t
                 playMs = finaleAt + finaleMs
-                EventLog.add(this, "Hinge reported closed ${t.roundToInt()}ms in: straight to the finale")
+                EventLog.add(this, if (waited) "Hinge reported closed ${t.roundToInt()}ms in, after a slow close: finale now"
+                    else "Hinge reported closed ${t.roundToInt()}ms in: straight to the finale")
             }
+            phase == Phase.PLAYING && closing && angle <= 1f -> hingeShut = true
             // Opened back up mid-fold: let the blades go
             (phase == Phase.PLAYING || phase == Phase.HOLDING) && currentInner && !closing -> {
                 fadeFrom = currentProgress()
@@ -585,7 +638,60 @@ class FoldMotionService : Service(), SensorEventListener {
         }
     }
 
+    /**
+     * Travaso's second vessel (27 Nov 2026): once a close has switched to the cover, the liquid
+     * pours onto it from the hinge edge. Only when the cover lights unlocked (an app continued
+     * on the cover): the lock screen sits above every app overlay, so a pour there would be hidden.
+     */
+    /** Diagnostics (27 Nov 2026): the window's real state, for when the black fails to cover. */
+    private fun logWindow(label: String) {
+        val v = overlay ?: return
+        val loc = IntArray(2).also { runCatching { v.getLocationOnScreen(it) } }
+        val touch = if (params.flags and WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE != 0) "touch-through (Android caps at 80%)" else "opaque"
+        EventLog.add(this, "Window $label: alpha ${"%.2f".format(params.alpha)} $touch, view ${v.width}x${v.height} at ${loc[0]},${loc[1]}, " +
+            "shown ${v.isShown}, attached ${v.isAttachedToWindow}, display ${v.display?.displayId ?: -1} state ${v.display?.state ?: -1}")
+    }
+
+    private fun startCoverPour() {
+        val locked = runCatching {
+            getSystemService(android.app.KeyguardManager::class.java)?.isKeyguardLocked == true
+        }.getOrDefault(true)
+        if (!isInteractive() || locked) {
+            EventLog.add(this, "Cover ${if (!isInteractive()) "off" else "locked"}: no arrival onto it")
+            finish()
+            return
+        }
+        val display = getSystemService(android.hardware.display.DisplayManager::class.java)
+            .getDisplay(android.view.Display.DEFAULT_DISPLAY)
+        @Suppress("DEPRECATION")
+        val size = android.graphics.Point().also { display.getRealSize(it) }
+        // Closed like a book, the spine is on the cover's left; turned, it moves with the turn
+        val edge = when (display.rotation) {
+            android.view.Surface.ROTATION_90 -> 3
+            android.view.Surface.ROTATION_180 -> 2
+            android.view.Surface.ROTATION_270 -> 1
+            else -> 0
+        }
+        val v = overlay ?: run { finish(); return }
+        v.creaseAcross = false
+        v.coverHingeEdge = edge
+        v.coverPour = true
+        v.mode = FoldOverlayView.Mode.OPEN
+        v.setContentSize(size.x, size.y)
+        v.show(1f)
+        val lamp = MotionConfig.CLOSING_EFFECT != MotionConfig.Effect.TRAVASO
+        revealMs = (if (lamp) MotionConfig.COVER_LAMP_MS else MotionConfig.COVER_POUR_MS) * animScale().coerceAtLeast(0.01f)
+        EventLog.add(this, "Cover arrival (${MotionConfig.CLOSING_EFFECT.name.lowercase()}) from the ${listOf("left", "top", "right", "bottom")[edge]} edge, ${size.x}x${size.y}")
+        stats.reset()
+        panelLit = false
+        panelWaitFrom = SystemClock.uptimeMillis()
+        enter(Phase.COVER_POUR)
+        logWindow("at the cover pour")
+        mainHandler.postDelayed({ if (phase == Phase.COVER_POUR) logWindow("during the hold") }, 150)
+    }
+
     private fun startClose(now: Long, scale: Float) {
+        MotionConfig.resolveRim(this)
         overlay?.mode = FoldOverlayView.Mode.CLOSE
         overlay?.creaseAcross = creaseRunsAcross()
         java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY).let { hr -> overlay?.setLight(hr, Ambient.darkness(this, hr)) }
@@ -597,6 +703,9 @@ class FoldMotionService : Service(), SensorEventListener {
         overlay?.brightness = MotionConfig.closeBrightness(this)
         val plan = Plan.make(predicted?.let { it }, scale / speed, MotionConfig.finaleMsFor(MotionConfig.CLOSING_EFFECT))
         finaleAt = plan.buildMs
+        buildMs = plan.buildMs
+        awaitingHinge = false
+        hingeShut = lastAngle in 0f..1f
         finaleMs = plan.finaleMs
         // Concentrato: less time to build means a faster close, so fewer details
         val full = (MotionConfig.EFFECT_MS - MotionConfig.FINALE_MS).toFloat() * scale.coerceAtLeast(0.01f)
@@ -638,6 +747,16 @@ class FoldMotionService : Service(), SensorEventListener {
         postureFlat = if (fold == null) null else flat
         // The hinge says which way the crease runs on the screen as it is held now
         if (fold != null) creaseAcross = fold.orientation == androidx.window.layout.FoldingFeature.Orientation.HORIZONTAL
+        // A slow close the effect was waiting on, opened flat again: give the screen back now.
+        // Only when the hinge agrees (27 Nov 2026): mid-fold, One UI can report flat for a moment,
+        // which faded the effect away while the phone was still closing
+        if (flat && was == false && phase == Phase.PLAYING && awaitingHinge && lastAngle >= 150f) {
+            awaitingHinge = false
+            EventLog.add(this, "Opened flat again during a slow close: screen given back")
+            fadeFrom = currentProgress()
+            enter(Phase.FADING)
+            return
+        }
         if (was != true || !half) return
         val now = SystemClock.uptimeMillis()
         val scale = animScale()
@@ -655,6 +774,7 @@ class FoldMotionService : Service(), SensorEventListener {
     }
 
     private fun startReveal(afterUnlock: Boolean = false) {
+        MotionConfig.resolveRim(this)
         mainHandler.removeCallbacks(armDeadline)
         java.util.Calendar.getInstance().get(java.util.Calendar.HOUR_OF_DAY).let { hr -> overlay?.setLight(hr, Ambient.darkness(this, hr)) }
         // The lock screen sits above every app overlay, so a reveal played now would be
@@ -749,6 +869,23 @@ class FoldMotionService : Service(), SensorEventListener {
         when (phase) {
             Phase.IDLE -> { finish(); return }
             Phase.PLAYING -> {
+                // The build-up has run its planned course but the hinge has not reported shut:
+                // a slower close than usual, so wait for it rather than finish early
+                if (!awaitingHinge && !hingeShut && t >= finaleAt && finaleAt == buildMs && lastAngle > 1f && currentInner) {
+                    awaitingHinge = true
+                    finaleAt = Float.MAX_VALUE
+                    EventLog.add(this, "Slower close than usual: waiting for the hinge (${lastAngle.roundToInt()}°)")
+                    logWindow("as the wait begins")
+                }
+                // Held part-folded rather than closing: give the screen back
+                if (awaitingHinge && t > kotlin.math.min(MotionConfig.SLOW_CLOSE_WAIT_MS * scale, MotionConfig.WATCHDOG_MS - 500f)) {
+                    awaitingHinge = false
+                    EventLog.add(this, "No hinge report after ${t.roundToInt()}ms: phone held part-folded, screen given back")
+                    fadeFrom = planP(t)
+                    enter(Phase.FADING)
+                    Choreographer.getInstance().postFrameCallback(frameCallback)
+                    return
+                }
                 val p = planP(t)
                 val k = if (t >= finaleAt + finaleMs) 1f else 0f
                 view.show(p)
@@ -757,12 +894,12 @@ class FoldMotionService : Service(), SensorEventListener {
                 if (!tickDone && p >= MotionConfig.TICK_AT) { tickDone = true; if (!closeFelt) haptics.tick(closeSlowness) }
                 val clickP = when (MotionConfig.CLOSING_EFFECT) {
                     MotionConfig.Effect.FANALE, MotionConfig.Effect.CIRCUITO, MotionConfig.Effect.FANALE_REVERSE, MotionConfig.Effect.LAMP_GLASS -> MotionConfig.FANALE_CONTACT_P
-                    MotionConfig.Effect.CATENARIA -> MotionConfig.CATENARIA_CONTACT_P
+                    MotionConfig.Effect.TRAVASO -> MotionConfig.TRAVASO_CONTACT_P
                     else -> MotionConfig.CLICK_AT
                 }
                 // Started closeLead ms early, so a sequence's climax (not its first hit) lands on contact;
                 // what follows the climax must fit in the finale, the light's last moment
-                if (!clickDone && planP(t + closeLead) >= clickP) {
+                if (!clickDone && !awaitingHinge && planP(t + closeLead) >= clickP) {
                     clickDone = true
                     if (!closeFelt) { closeFelt = true; haptics.click(closeSlowness, finaleMs.roundToInt()) }
                 }
@@ -810,7 +947,7 @@ class FoldMotionService : Service(), SensorEventListener {
                     MotionConfig.Effect.SIGNATURE -> MotionConfig.SIGNATURE_BREAK_T
                     MotionConfig.Effect.FRAME_OF_LIGHT, MotionConfig.Effect.LIT_GLASS, MotionConfig.Effect.LAMP_GLASS -> MotionConfig.FRAME_SEAT_T
                     MotionConfig.Effect.FANALE -> MotionConfig.FANALE_LIGHTS_T
-                    MotionConfig.Effect.CATENARIA -> MotionConfig.CATENARIA_TAUT_T
+                    MotionConfig.Effect.TRAVASO -> MotionConfig.TRAVASO_SEAT_T
                     MotionConfig.Effect.FANALE_REVERSE -> MotionConfig.FANALE_REVERSE_CLICK_T
                     MotionConfig.Effect.CIRCUITO -> MotionConfig.CIRCUITO_MEET_T
                     else -> 2f
@@ -820,14 +957,14 @@ class FoldMotionService : Service(), SensorEventListener {
                 val touchAt = when (opening) {
                     MotionConfig.Effect.FRAME_OF_LIGHT, MotionConfig.Effect.LIT_GLASS, MotionConfig.Effect.LAMP_GLASS -> MotionConfig.FRAME_SEAT_T
                     MotionConfig.Effect.FANALE -> MotionConfig.FANALE_TOUCH_T
-                    MotionConfig.Effect.CATENARIA -> MotionConfig.CATENARIA_TAUT_T
+                    MotionConfig.Effect.TRAVASO -> MotionConfig.TRAVASO_SEAT_T
                     MotionConfig.Effect.FANALE_REVERSE -> MotionConfig.FANALE_REVERSE_TOUCH_T
                     MotionConfig.Effect.CIRCUITO -> MotionConfig.CIRCUITO_TOUCH_T
                     else -> 2f
                 }
                 // k is real time: the effects draw on unglide(glide(k)), which is k
                 // Started releaseLead ms early so the climax lands on the light's; nothing may follow it
-                // once touch is back (Catenaria: touch returns on the climax, so nothing follows at all)
+                // once touch is back (Travaso: touch returns on the climax, so nothing follows at all)
                 if (!releaseDone && (elapsed() + releaseLead) / revealMs >= clickAt) {
                     releaseDone = true
                     haptics.release(openSlowness, ((touchAt - clickAt) * revealMs).roundToInt().coerceAtLeast(0))
@@ -840,6 +977,33 @@ class FoldMotionService : Service(), SensorEventListener {
                         "Reveal done: drew ${view.drawCount} of ${r?.frames ?: 0} frames" +
                             (r?.let { ", ${it.fps}fps, ${it.dropped} dropped" } ?: "")
                     )
+                    finish(); return
+                }
+            }
+            Phase.COVER_POUR -> {
+                if (!panelLit) {
+                    // Hold black until the cover reports it is lit (27 Nov 2026): started at the
+                    // switch, the pour was spent on a panel still powering up, and only its last
+                    // stretch, light in the corners, was ever seen. Capped, never stuck
+                    val waited = SystemClock.uptimeMillis() - panelWaitFrom
+                    // Both panels are one display to Android, already "on" from the inner screen,
+                    // so its state says nothing about the cover glass: wait a fixed settle instead
+                    if (waited >= MotionConfig.COVER_SETTLE_MS) {
+                        panelLit = true
+                        EventLog.add(this, "Cover held ${waited}ms to light, arrival starts")
+                        phaseAt = SystemClock.uptimeMillis()
+                    } else {
+                        view.show(1f)
+                        Choreographer.getInstance().postFrameCallback(frameCallback)
+                        return
+                    }
+                }
+                val k = FoldMath.clamp(elapsed() / revealMs)
+                view.show(1f - FoldMath.glide(k))
+                stats.onFrame(frameTimeNanos)
+                if (k >= 1f) {
+                    val r = stats.result()
+                    EventLog.add(this, "Cover arrival done" + (r?.let { ", ${it.fps}fps, ${it.dropped} dropped" } ?: ""))
                     finish(); return
                 }
             }
@@ -861,6 +1025,7 @@ class FoldMotionService : Service(), SensorEventListener {
         mainHandler.removeCallbacks(revealDeadline)
         mainHandler.removeCallbacks(armDeadline)
         mainHandler.removeCallbacks(unlockDeadline)
+        overlay?.coverPour = false
         overlay?.clearAll()
         setActiveWindow(false)
     }

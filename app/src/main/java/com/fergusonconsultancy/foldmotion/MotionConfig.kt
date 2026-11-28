@@ -29,7 +29,7 @@ package com.fergusonconsultancy.foldmotion
  * no official colour value was available.
  */
 object MotionConfig {
-    enum class Effect { ONE_PLANE, CREASE_SPLIT, RULED_SURFACE, NAVE_OF_LIGHT, LACQUER_PANEL, ARCH_APERTURE, HINGE_SHADE, SIGNATURE, FRAME_OF_LIGHT, LIT_GLASS, LAMP_GLASS, FANALE, CATENARIA, FANALE_REVERSE, CIRCUITO }
+    enum class Effect { ONE_PLANE, CREASE_SPLIT, RULED_SURFACE, NAVE_OF_LIGHT, LACQUER_PANEL, ARCH_APERTURE, HINGE_SHADE, SIGNATURE, FRAME_OF_LIGHT, LIT_GLASS, LAMP_GLASS, FANALE, TRAVASO, FANALE_REVERSE, CIRCUITO }
 
     /**
      * The pairings Mechack chooses between in the app (23 Oct 2026). Each names its closing and
@@ -37,19 +37,24 @@ object MotionConfig {
      */
     /**
      * The transitions (30 Oct 2026): four, in alphabetical order, and the same four names in
-     * every list. Each is one path of light (or one chain of it); its closing retraces the path its
+     * every list. Each is one path of light (or one body of liquid); its closing retraces the path its
      * opening takes, in the opposite direction, so opening and closing are one gesture, there
      * and back. Choosing one here sets both; they can still be mixed below.
      */
     enum class Style(val label: String, val detail: String, val closing: Effect, val opening: Effect) {
-        CATENARIA("Catenaria", "A chain of light hangs down the crease and swings open between the parting halves, pulled taut as it leaves. Closing lets it fall back to the crease.", Effect.CATENARIA, Effect.CATENARIA),
         CIRCUITO("Circuito", "Both lamps light at their outer edges and the light runs round the rings and in to the crease. Closing runs it back out.", Effect.CIRCUITO, Effect.CIRCUITO),
-        FANALE("Fanale", "The lamps light one after the other, right then left, like unlocking the car. Closing runs the same path back, left then right.", Effect.FANALE, Effect.FANALE),
-        FANALE_REVERSE("Fanale reversed", "Light rises from the hinge, out along the bars and round the rings. Closing runs it back round the rings and in to the crease.", Effect.FANALE_REVERSE, Effect.FANALE_REVERSE),
+        FANALE_REVERSE("Fanale", "Light rises from the hinge, out along the bars and round the rings. Closing runs it back round the rings and in to the crease.", Effect.FANALE_REVERSE, Effect.FANALE_REVERSE),
+        FANALE("Otto", "The lamps with figure-8 joints, a nod to the Fold 8: both rings sweep round together, the light runs in along both bars and meets in the middle, opening and closing.", Effect.FANALE, Effect.FANALE),
+        TRAVASO("Travaso", "Your screen pours out of the crease like a liquid and spreads to fill the glass; closing drains it back into the crease and pours it onto the cover.", Effect.TRAVASO, Effect.TRAVASO),
     }
 
-    /** The colour of Catenaria's chain of light: glow and core. */
+    /**
+     * The colour of Travaso's meniscus: glow and core. THEME (27 Nov 2026, the default) takes it
+     * from the wallpaper's Material You accent, warmed a touch and held below paint-like
+     * saturation; a theme too grey to carry light falls back to champagne.
+     */
     enum class Rim(val label: String, val glow: Int, val core: Int) {
+        THEME("Your colours", android.graphics.Color.rgb(236, 196, 120), android.graphics.Color.rgb(255, 244, 222)),
         CHAMPAGNE("Champagne", android.graphics.Color.rgb(236, 196, 120), android.graphics.Color.rgb(255, 244, 222)),
         ROSSO("Rosso", android.graphics.Color.rgb(246, 20, 34), android.graphics.Color.rgb(255, 118, 98)),
         VISCONTI("Visconti", android.graphics.Color.rgb(36, 222, 120), android.graphics.Color.rgb(200, 255, 214)),
@@ -57,11 +62,42 @@ object MotionConfig {
 
     fun rim(context: android.content.Context): Rim = runCatching {
         Rim.valueOf(context.getSharedPreferences(PREFS, android.content.Context.MODE_PRIVATE).getString("rim", null)!!)
-    }.getOrDefault(Rim.CHAMPAGNE)
+    }.getOrDefault(Rim.THEME)
+
+    /** The meniscus colours in use: the chosen house colour, or the theme's, resolved. */
+    var RIM_GLOW = Rim.CHAMPAGNE.glow
+    var RIM_CORE = Rim.CHAMPAGNE.core
+
+    /** Resolves RIM_GLOW and RIM_CORE from the choice; for THEME, from the wallpaper's accent. */
+    fun resolveRim(context: android.content.Context) {
+        val r = RIM
+        if (r != Rim.THEME) { RIM_GLOW = r.glow; RIM_CORE = r.core; return }
+        val accent = runCatching { context.getColor(android.R.color.system_accent1_300) }.getOrNull()
+        if (accent == null) { RIM_GLOW = Rim.CHAMPAGNE.glow; RIM_CORE = Rim.CHAMPAGNE.core; return }
+        val hsv = FloatArray(3)
+        android.graphics.Color.colorToHSV(accent, hsv)
+        if (hsv[1] < 0.12f) { RIM_GLOW = Rim.CHAMPAGNE.glow; RIM_CORE = Rim.CHAMPAGNE.core; return }
+        // Warmed: the hue moved an eighth of the way towards amber, the short way round
+        var dh = 38f - hsv[0]
+        if (dh > 180f) dh -= 360f
+        if (dh < -180f) dh += 360f
+        hsv[0] = (hsv[0] + dh * 0.125f + 360f) % 360f
+        // Light, not paint: saturation capped, brightness kept high
+        hsv[1] = hsv[1].coerceIn(0.25f, 0.62f)
+        hsv[2] = hsv[2].coerceAtLeast(0.88f)
+        val glow = android.graphics.Color.HSVToColor(hsv)
+        RIM_GLOW = glow
+        // The core: a soft near-white tinted by the glow, the one highlight
+        RIM_CORE = android.graphics.Color.rgb(
+            255 - (255 - android.graphics.Color.red(glow)) / 5,
+            255 - (255 - android.graphics.Color.green(glow)) / 5,
+            255 - (255 - android.graphics.Color.blue(glow)) / 5)
+    }
 
     fun setRim(context: android.content.Context, r: Rim) {
         context.getSharedPreferences(PREFS, android.content.Context.MODE_PRIVATE).edit().putString("rim", r.name).apply()
         RIM = r
+        resolveRim(context)
     }
 
     /**
@@ -84,14 +120,14 @@ object MotionConfig {
     fun setFollowRoom(context: android.content.Context, on: Boolean) =
         context.getSharedPreferences(PREFS, android.content.Context.MODE_PRIVATE).edit().putBoolean("follow_room", on).apply()
 
-    var RIM = Rim.CHAMPAGNE
+    var RIM = Rim.THEME
         private set
 
     private const val PREFS = "fold_motion"
     private const val STYLE_KEY = "style"
 
-    /** Membrana was replaced by Catenaria (26 Nov 2026): a saved Membrana choice becomes Catenaria. */
-    private fun migrate(name: String?): String? = if (name == "MEMBRANA") "CATENARIA" else name
+    /** Membrana, then Catenaria, were replaced by Travaso (27 Nov 2026): a saved choice of either becomes Travaso. */
+    private fun migrate(name: String?): String? = if (name == "MEMBRANA" || name == "CATENARIA") "TRAVASO" else name
 
     fun style(context: android.content.Context): Style = runCatching {
         Style.valueOf(migrate(context.getSharedPreferences(PREFS, android.content.Context.MODE_PRIVATE).getString(STYLE_KEY, null))!!)
@@ -107,18 +143,18 @@ object MotionConfig {
 
     /** The openings offered in the app. */
     enum class Opening(val label: String, val detail: String, val effect: Effect) {
-        CATENARIA("Catenaria", "A chain of light hangs straight down the crease; its ends ride out with the parting halves and it swings open into a hanging curve, your screen beneath it, until it is pulled taut and leaves through the top", Effect.CATENARIA),
         CIRCUITO("Circuito", "From both lamps' outer edges, round each ring both ways, in along the bars; the two lights meet on the crease, bloom, and the halves part", Effect.CIRCUITO),
-        FANALE("Fanale", "The right ring sweeps round and its bar runs in to the crease; the light crosses, runs out along the left bar and closes the left ring; the lamps bloom and the halves part", Effect.FANALE),
-        FANALE_REVERSE("Fanale reversed", "A point of light rises from the hinge, splits, runs out along both bars and sweeps the full circle of each ring; the lamps bloom and the halves part", Effect.FANALE_REVERSE),
+        FANALE_REVERSE("Fanale", "A point of light rises from the hinge, splits, runs out along both bars and sweeps the full circle of each ring; the lamps bloom and the halves part", Effect.FANALE_REVERSE),
+        FANALE("Otto", "Both rings sweep round together, each from where its bar leaves it, then the light runs in along both bars and meets in the middle; the lamps bloom with the click and the halves part", Effect.FANALE),
+        TRAVASO("Travaso", "Your screen pours out of the crease as a column, then spreads sideways a beat behind, its corners relaxing into the screen's own; one warm meniscus of light on its edge", Effect.TRAVASO),
     }
 
     /** The closings offered in the app. */
     enum class Closing(val label: String, val detail: String, val effect: Effect) {
-        CATENARIA("Catenaria", "The opening run back: the chain drops in from the top, taut, and sags deeper as the halves close in on it, until it hangs straight down the crease as they meet", Effect.CATENARIA),
         CIRCUITO("Circuito", "The opening run back: a point in the closing gap splits, runs out along both bars and round each ring both ways, meeting at the outer edges; the halves seal on a strip of light", Effect.CIRCUITO),
-        FANALE("Fanale", "The opening run back: round the left ring, down its bar, across the crease, out along the right bar and round the right ring; the halves seal on a strip of light", Effect.FANALE),
-        FANALE_REVERSE("Fanale reversed", "The opening run back: the left ring from three o'clock clockwise, the right from nine anticlockwise, then in along both bars to meet in the middle as the halves seal", Effect.FANALE_REVERSE),
+        FANALE_REVERSE("Fanale", "The opening run back: the left ring from three o'clock clockwise, the right from nine anticlockwise, then in along both bars to meet in the middle as the halves seal", Effect.FANALE_REVERSE),
+        FANALE("Otto", "As it opens: both rings sweep round together, then in along both bars to meet in the middle as the halves seal on a strip of light", Effect.FANALE),
+        TRAVASO("Travaso", "The opening run back: your screen drains into the crease, sides first, then the column; once shut, the same liquid pours in from the hinge edge of the cover", Effect.TRAVASO),
     }
 
     private const val OPENING_KEY = "opening_effect"
@@ -159,6 +195,7 @@ object MotionConfig {
         CLOSING_EFFECT = closing(context).effect
         OPENING_EFFECT = opening(context).effect
         RIM = rim(context)
+        resolveRim(context)
     }
 
     /** Closing effect; set from the chosen closing in the app. */
@@ -177,16 +214,24 @@ object MotionConfig {
      * LIGHTS_T (the haptic click); touch returns at TOUCH_T, when the halves have nearly gone.
      * Closing: the halves meet at CONTACT_P of the closing's progress (the click).
      */
-    const val FANALE_LIGHTS_T = 0.54f
+    const val FANALE_LIGHTS_T = 0.37f
     const val FANALE_TOUCH_T = 0.8f
     const val FANALE_CONTACT_P = 0.545f
 
     /**
-     * Catenaria (26 Nov 2026, replacing Membrana), as shares of the reveal's time: the chain is
-     * pulled taut at TAUT_T (the haptic click, and touch returns). Closing: the halves meet at CONTACT_P.
+     * Travaso (27 Nov 2026, replacing Catenaria and Membrana before it), as shares of the reveal's
+     * time: the liquid seats into the screen's corners at SEAT_T (the haptic click, and touch
+     * returns). Closing: the last of the column drains into the crease at CONTACT_P.
      */
-    const val CATENARIA_TAUT_T = 0.7f
-    const val CATENARIA_CONTACT_P = 0.545f
+    const val TRAVASO_SEAT_T = 0.7f
+    const val TRAVASO_CONTACT_P = 0.9f
+
+    /**
+     * Travaso, a slow close: while waiting for the hinge the column sinks from BUILD_END
+     * towards this progress (short of CONTACT_P), easing with this time constant in ms.
+     */
+    const val TRAVASO_CREEP_P = 0.8f
+    const val TRAVASO_CREEP_MS = 700f
 
     /**
      * Fanale reversed, as shares of the reveal's time: the closing's contact (p = 0.545) comes at
@@ -241,7 +286,7 @@ object MotionConfig {
     /** For Scatto's preview: ms from an opening's climax to touch returning, at the designed speed. */
     fun climaxToTouchMs(e: Effect): Int = (REVEAL_MS * when (e) {
         Effect.FANALE -> FANALE_TOUCH_T - FANALE_LIGHTS_T
-        Effect.CATENARIA -> 0f
+        Effect.TRAVASO -> 0f
         Effect.FANALE_REVERSE -> FANALE_REVERSE_TOUCH_T - FANALE_REVERSE_CLICK_T
         Effect.CIRCUITO -> CIRCUITO_TOUCH_T - CIRCUITO_MEET_T
         else -> 0.3f
@@ -289,6 +334,29 @@ object MotionConfig {
 
     /** Stay black this long after the effect if no screen switch follows, then fade out. */
     const val HOLD_TIMEOUT_MS = 600L
+
+    /** Travaso: how long the pour onto the cover takes, at the designed speed. */
+    const val COVER_POUR_MS = 600L
+
+    /** The lamp transitions' arrival on the cover: the light from the hinge, one bloom, then away. */
+    const val COVER_LAMP_MS = 720L
+
+    /**
+     * Travaso: the pour onto the cover holds black this long after the switch, for the cover
+     * glass to light (27 Nov 2026: both panels are one display, already reported on from the
+     * inner screen, so the display state cannot say when the cover is showing; started sooner,
+     * only the pour's last stretch, light in the corners, was ever seen).
+     */
+    const val COVER_SETTLE_MS = 340L
+
+    /**
+     * A slow close waits for the hinge to report shut (or for One UI to switch to the cover: on
+     * the Fold 8 the hinge often reports nothing mid-close and only 180 to 0 after the switch).
+     * Opening flat again gives the screen straight back; past this many ms into the effect (at
+     * the designed speed) the phone is taken to be held part-folded and the screen is given back.
+     * Kept under WATCHDOG_MS.
+     */
+    const val SLOW_CLOSE_WAIT_MS = 6000L
     const val FADE_MS = 200L
 
     /**
@@ -321,8 +389,9 @@ object MotionConfig {
 
     /**
      * Normal window opacity. Android 12+ blocks touches through another app's
-     * window above 80%, so the window only goes fully opaque while an effect
-     * is on screen, and always drops back afterwards.
+     * window above 80%, and caps a touch-through overlay at 80% however opaque it
+     * asks to be; so while an effect covers the screen the window takes touches
+     * and is fully opaque, and it always drops back to touch-through at 80% after.
      */
     const val IDLE_WINDOW_ALPHA = 0.8f
 
@@ -330,7 +399,7 @@ object MotionConfig {
     const val LEFT_TO_RIGHT = true
 
     /** Anything still playing after this long is stuck and gets reset. */
-    const val WATCHDOG_MS = 3000L
+    const val WATCHDOG_MS = 7000L
 
     /** Android's standard hinge sensor reports 90 degree steps; ignore jitter below this. */
     const val MOVE_THRESHOLD_DEG = 1.5f

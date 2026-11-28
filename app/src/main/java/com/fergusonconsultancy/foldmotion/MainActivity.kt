@@ -141,7 +141,7 @@ class MainActivity : Activity(), SensorEventListener {
         screen.add(closingDetail)
         screen.add(tuningCard(open = false), px(14))
 
-        // Catenaria's chain colour: only there when Catenaria opens or closes (principle 3)
+        // Travaso's light colour: only there when Travaso opens or closes (principle 3)
         rimBlock = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         rimBlock.addView(text("Rim light", 14f, Kit.MUTED, 450).apply { setPadding(px(4), 0, 0, px(8)) })
         val rims = MotionConfig.Rim.entries
@@ -222,9 +222,9 @@ class MainActivity : Activity(), SensorEventListener {
         ) requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), 1)
     }
 
-    /** The chain colour materialises under the choices when Catenaria is used, and folds away when not. */
+    /** The light colour materialises under the choices when Travaso is used, and folds away when not. */
     private fun showRim(animate: Boolean = true) {
-        val on = MotionConfig.opening(this) == MotionConfig.Opening.CATENARIA || MotionConfig.closing(this) == MotionConfig.Closing.CATENARIA
+        val on = MotionConfig.opening(this) == MotionConfig.Opening.TRAVASO || MotionConfig.closing(this) == MotionConfig.Closing.TRAVASO
         val v = if (on) View.VISIBLE else View.GONE
         if (rimBlock.visibility == v) return
         if (animate) android.transition.TransitionManager.beginDelayedTransition(screen.column)
@@ -418,20 +418,20 @@ class MainActivity : Activity(), SensorEventListener {
 
     companion object {
         val DOCTRINE_NOTES = listOf(
-            "The hanging chain" to "Gaudí found his arches by hanging chains and letting gravity draw the curve. Catenaria does the same with light: a chain of fixed length held at the parting halves' top corners takes the only shape physics allows, so nothing in it is drawn by hand. Straight on the crease, curved as it swings open, taut as it leaves.",
+            "Two vessels" to "Travaso is Italian for pouring from one vessel into another. The two screens are the vessels and the hinge is the neck between them: your screen is the liquid, poured out of the crease on opening, drained back into it on closing and poured onto the cover. Only Android lets an app draw across both screens and over everything on them, and the meniscus is a GPU shader running at the screen's full rate.",
             "Concentrato" to "Every style reads how fast you folded. Opening, from the hinge passing 90 degrees to One UI switching; closing, from how quickly you usually close. A fast fold keeps only the movement: no sparks, no glow, no bloom. A slow one keeps every detail. Switch it off and every fold gets everything.",
-            "The Giulietta principle" to "The preview's controls stay hidden in the stage until your finger lands on it. Catenaria's chain colour only appears when Catenaria is chosen. The eyebrows and the lines under each title fall away while you fling the page, and the page itself stretches like one surface.",
+            "The Giulietta principle" to "The preview's controls stay hidden in the stage until your finger lands on it. Travaso's light colour only appears when Travaso is chosen. The eyebrows and the lines under each title fall away while you fling the page, and the page itself stretches like one surface.",
             "The room's light" to "A real lamp looks different by day and by night, so these do too. In daylight you see the lamp: its housing, its dark lens, the unlit LEDs as dark beads, and crisp light with no bloom. At dusk a halo forms and the unlit beads hold embers. In the dark the housing disappears and only light is left, blooming onto your screen, a little dimmer so it is kind to your eyes. The light sensor is read while the screen is on, so it is ready the moment you fold.",
         )
         val DESIGN_NOTES = listOf(
-            "Fanale" to "Alfa Romeo alone, like unlocking the car, with a nod to the Fold 8. The bars leave their rings at opposite points, the left from its upper right and the right from its lower left, so the light's path traces the waist of an 8. Opening, the right ring sweeps round and its bar curves in to the crease, the light crosses, runs out along the left bar and closes the left ring; the lamps bloom with the click and the halves part. Closing runs it back: round the left ring the other way, down its bar, across the crease, up the right bar and round the right ring.",
+            "Fanale" to "Alfa Romeo alone, like unlocking the car. The light starts at the hinge. Opening, a point rises out of it, splits, runs out along both bars and sweeps the full circle of each ring; the lamps bloom and the halves part. Closing is that path run back: the left ring from three o'clock clockwise, the right from nine o'clock anticlockwise, in step, then in along both bars to meet in the middle as the halves seal.",
+            "Otto" to "Otto is Italian for eight: the lamps with figure-8 joints, a nod to the Fold 8. The bars leave their rings at opposite points, the left from its upper right and the right from its lower left, so the light's path traces the waist of an 8. Both lamps run at once, opening and closing alike: the rings sweep round together, the light runs in along both bars and meets in the middle; opening, the lamps bloom with the click and the halves part; closing, the halves seal on a strip of light. Until 28 Nov 2026 this was called Fanale, and today's Fanale was Fanale reversed.",
             "Circuito" to "Fanale in symmetry. Opening, both lamps light at their outer edges at once, the light runs round each ring both ways, in along the bars and meets on the crease. Closing runs it back out: a point in the narrowing gap splits, runs out along the bars and round each ring both ways, meeting at the lamps' outer edges, before the halves seal.",
-            "There and back" to "Every transition is one path of light, or one chain of it, and its closing retraces the path its opening takes in the opposite direction, so the two read as one gesture. The halves sweep in and almost meet, leaving a narrow strip of your screen so the lamps are seen; the light runs its path back; at contact, with the click, a thin strip of light seals the crease and draws in to a point. The four are listed in the same order everywhere, alphabetically.",
-            "Fanale reversed" to "The light starts at the hinge. Opening, a point rises out of it, splits, runs out along both bars and sweeps the full circle of each ring; the lamps bloom and the halves part. Closing is that path run back: the left ring from three o'clock clockwise, the right from nine o'clock anticlockwise, in step, then in along both bars to meet in the middle as the halves seal.",
+            "There and back" to "Every transition is one path of light, or one body of liquid, and its closing retraces the path its opening takes in the opposite direction, so the two read as one gesture (Otto alone runs the same path both ways: its lamps always meet in the middle). The halves sweep in and almost meet, leaving a narrow strip of your screen so the lamps are seen; the light runs its path back; at contact, with the click, a thin strip of light seals the crease and draws in to a point. The four are listed in the same order everywhere, alphabetically.",
             "Your own pairing" to "Presets match an opening to its closing. Choose them separately and the preset row reads Custom; nothing is lost, and tapping a preset matches them again.",
             "Brightness and speed" to "Each direction has its own. Brightness runs from 60% to 160% of the designed light and lifts the glow, not only the colour. Speed runs from 0.7x to 1.4x. The closing still finishes before One UI switches, because its build is planned against your fold; a slower closing simply starts earlier. The tick under each slider is the designed value, and releasing near it settles there.",
-            "Catenaria" to "Gaudí's hanging chain, in place of Membrana. No lamps: one chain of light. Opening, it hangs straight down the crease; its ends ride out with the parting halves and it swings open into a catenary, your screen beneath it, rising as the span grows until it is pulled taut, lifts a touch and leaves through the top. Closing is the same gesture run back, the chain sagging deeper as the halves close in until it hangs straight down the crease as they meet. The chain takes champagne, rosso or Visconti.",
-            "One climax" to "Every style keeps one moment: the seated bezel, the lights coming on, the chain pulled taut. The haptic click sits on it, and touch comes back the moment your screen is whole.",
+            "Travaso" to "In place of Catenaria. No lamps: your screen as a liquid. Opening, it pours out of the crease as a column, then spreads sideways a beat behind, its corners relaxing from round into the screen's own as it seats. Closing drains it back, sides first, then the column, into the crease; once shut, it pours onto the cover from the hinge edge. Its light takes your wallpaper's colours, or champagne, rosso or Visconti.",
+            "One climax" to "Every style keeps one moment: the seated bezel, the lights coming on, the liquid seating into the corners. The haptic click sits on it, and touch comes back the moment your screen is whole.",
         )
     }
 }
